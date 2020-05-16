@@ -9,7 +9,7 @@
 
 
 \begin{document}
-\title{Практика использования Docker. Наиболее полезные конструкции}
+\title{Практика использования и \\наиболее полезные конструкции \texttt{Docker}}
 
 \author{\itshape Подвойский А.О.}
 
@@ -22,11 +22,219 @@
 
 \section{Общие сведения о системе Docker}
 
+\subsection{Установка}
+
+Установить \texttt{Docker} можно с помощью менеджера пакетов \texttt{conda}
+
+\begin{lstlisting}[
+style = ironpython,
+numbers = none
+]
+conda install -c conda-forge docker-py
+\end{lstlisting}
+
+На текущий момент без серьезных проблем \texttt{Docker} работает только на 64-битовом \texttt{Linux}.
+
+Для нормальной работы на \texttt{MacOS X} или \texttt{Windows} потребуется дополнительно установить какую-либо виртуальную машину в полной комплектации или пакет \texttt{Docker Toolbox}:
+
+\begin{itemize}
+	\item для \texttt{MacOS X}: \url{https://docs.docker.com/toolbox/toolbox_install_mac/},
+	
+	\item для \texttt{Windows}\footnote{Поддерживается даже \texttt{Windows 7}}: \url{https://docs.docker.com/toolbox/toolbox_install_windows/}; после установки \texttt{Docker Toolbox} останется только запустить \texttt{Docker Quick Start Terminal}.
+\end{itemize}
+
+\subsection{Контейнеры}
+
+\emph{Контейнеры} представляют собой средства инкапсуляции приложения вместе со всеми его зависимостями.
+
+Поскольку \texttt{Docker} сам по себе не обеспечивает реализацию любого типа виртуализации, контейнеры всегда должны соответствовать ядру хоста -- контейнер на \texttt{Windows Server} может работать только на хосте под управлением операционной системы \texttt{Windows Server}, а 64-битный \texttt{Linux}-контейнер работает только на хосте с установленной 64-битной версией операционной системы \texttt{Linux} \cite{mouat:docker-2017}.
+
+\subsection{Создание образов из Dockerfile}
+
+\texttt{Dockerfile} -- это обычный текстовый файл, содержащий набор операций, которые могут быть использованы для создания Docker-образа.
+
+Пример. Для начала создадим новый каталог и собственно Dockerfile
+
+\begin{lstlisting}[
+numbers = none
+]
+$ mkdir cowsay
+$ cd cowsay
+$ touch Dockerfile
+\end{lstlisting}
+
+Затем в созданный \texttt{Dockerfile} добавим следующее 
+\begin{lstlisting}[
+title = {\sffamily Dockerfile},
+numbers = none
+]
+FROM debian:wheezy
+MAINTAINER John Smith <john@smith.com>
+RUN apt-get update && apt-get install -y cowsay fortune
+COPY entrypoint.sh /
+ENTRYPOINT ["/entrypoint.sh"]
+\end{lstlisting}
+
+Инструкция \texttt{FROM} определяет базовый образ ОС (это в данном случае \texttt{debian} с уточненной версией <<wheezy>>). Инструкция \texttt{FROM} является строго обязательной для всех файлов Dockerfile как самая первая незакомментированная инструкция.
+
+Инструкция \texttt{MAINTAINER} просто определяет информацию, позволяющую связаться с автором образа.
+
+Инструкция \texttt{COPY} копирует файл из файловой системы хоста в файловую систему образа, где первый аргумент определяет файл хост, а второй -- целевой путь.
+
+Инструкция \texttt{RUN} определяет команды, выполняемые в командной оболочке внутри данного образа.
+
+Комментарии к скрипту \texttt{entrypoint.sh}. Файл \texttt{entrypoint.sh} должен лежать в той же директории, что и файл \texttt{Dockerfile} и иметь содержание на подобие следующего
+\begin{lstlisting}[
+title = {\sffamily entrypoint.sh},
+numbers = none
+]
+if [ $# -eq 0 ]; then
+    /usr/games/fortune | /usr/games/cowsay
+else
+    /usr/games/cowsay "$@"
+fi
+\end{lstlisting}
+
+Здесь конструкция \texttt{[...]} -- это форма\footnote{Есть еще вариант \texttt{test выражение}, но форма \texttt{[ выражение ]} более популярна} команды \texttt{test} для проверки различных условий. Последовательность символов \texttt{\$\#} -- встроенная переменная, обозначающая количество аргументов в командной строке. Последовательность символов \texttt{\$@} -- это все аргументы командной строки, а \texttt{"\$@"} -- все аргументы командной строки, заключенные по отдельности в кавычки \cite[\strbook{44}]{robbins:bash-2017}.
+
+После сохранения необходимо сделать этот файл исполняемым при помощи команды\\ \texttt{chmod +x entrypoint.sh}.
+
+Теперь можно создать образ на основе файла \texttt{Dockerfile}
+\begin{lstlisting}[
+numbers = none
+]
+docker build -t test/cowsay-dockerfile .
+\end{lstlisting}
+
+Здесь \texttt{test} -- имя репозитория, а \texttt{cowsay-dockerfile} -- имя образа.
+
+После этого можно запускать контейнер, который строится на основе образа \verb|test/cowsay-dockerfile|
+\begin{lstlisting}[
+numbers = none
+]
+docker run test/cowsay-dockerfile /usr/games/cowsay 'Moo'
+\end{lstlisting}
+
+
+
+\section{Общие сведения о компьютерных сетях}
+
+\subsection{Термины и определения}
+
+\paragraph{{localhost}} (так называемый, <<локальный хост>>, по смыслу <<этот компьютер>>) -- стандартное, официально зарезервированное доменное имя для \emph{частых} (или что то же самое \emph{локальных}) IP-адресов\footnote{Уникальный сетевой адрес узла в компьютерной сети, построенной на базе стека протоколов TCP/IP} \emph{петлевого интерфейса}\footnote{Обычно используется термин \emph{loopback}, который описывает методы или процедуры маршрутизации электронных сигналов, цифровых потоков данных, или других движущихся сущностей от их источника и обратно к тому же источнику без специальной обработки или модификации} (диапазон \texttt{127.0.0.1} -- \texttt{127.255.255.255}). Использование IP-адреса \texttt{127.0.0.1} позволяет устанавливать соединение и передавать информацию для программ-серверов, работающих на том же компьютере, что и программа-клиент. Примером может быть запущенный на компьютере веб-сервер приложений, обращение к которому выполняется с этого же компьютера для веб-разработки на данном компьютере без необходимости выкладывать веб-программу в сеть Интернет, пока ее разработка не закончена. Традиционно IP-адресу \texttt{127.0.0.1} однозначно сопоставляется имя хоста \texttt{localhost}.
+
+\paragraph{{порт}} целое неотрицательное число, записываемое в заголовках \emph{протоколов транспортного уровня} модели OSI (TCP, UDP, SCTP, DCCP). Используется для определения процесса-получателя пакета в пределах одного хоста (локального компьютера).
+
+\section{Базовые концепции}
+
+\subsection{Виртуальный сетевой интерфейс}
+
+Все TCP/IP-реализации поддерживают loopback-механизмы, которые реализуют виртуальный сетевой интерфейс исключительно программно и не связанны с каким-либо оборудованием, но при этом полностью интегрированны во внутреннюю сетевую инфраструктуру компьютерной системы. Пожалуй самый распространенным IP-адресом в механизмах loopback является \texttt{127.0.0.1}. В IPv4 в него также отображается любой адрес из диапазона \texttt{127.0.0.0} -- \texttt{127.255.255.255}. IPv6 определяет единственные адрес для этой функции -- \texttt{0:0:0:0:0:0:0:1/128} (так же записывается как \texttt{::1/128}). Стандартное, официально зарезервированное доменное имя для этих адресов -- \texttt{localhost}.
+
+Интерфейс loopback имеет несколько путей применения. Он может быть использован сетевым клиентским программным обеспечением, чтобы общаться с серверным приложением, расположенным на том компьютере. То есть если на компьютере, на котором запущен веб-сервер, указать в веб-браузере URL \texttt{http://127.0.0.1/} или \texttt{http:/localhost/}, то он попадает на веб-сайт этого компьютера.
+
+\section{Наиболее полезные конструкции}
+
+\subsection{Манипуляции с контейнерами}
+
+Запустить контейнер с именем \texttt{leorcont}, создав сеанс интерактивной работы (\texttt{-i}) на подключаемом терминальном устройстве (\texttt{-t}) tty, и вызывать командную оболочку \texttt{bash} из-под ОС~\texttt{Ubuntu Linux}
+
+\begin{lstlisting}[
+numbers = none
+]
+docker run -it --name leorcont ubuntu bash
+\end{lstlisting}
+
+Запустить контейнер, а после остановки удалить сам контейнер и созданную на время его существования файловую систему
+
+\begin{lstlisting}[
+numbers = none
+]
+docker run --rm -it ubuntu bash
+\end{lstlisting}
+
+Перезапустить остановленный контейнер
+
+\begin{lstlisting}[
+numbers = none
+]
+docker start quizzical_wright
+\end{lstlisting}
+
+\subsection{Информация о контейнере}
+
+Получить информацию о контейнере
+
+\begin{lstlisting}[
+numbers = none
+]
+docker inspect quizzical_wright
+\end{lstlisting}
+
+Вывести информацию о контейнере с использованием утилиты \texttt{grep}
+
+\begin{lstlisting}[
+numbers = none
+]
+docker inspect quizzical_wright | grep SandboxID
+\end{lstlisting}
+
+Вывести информацию о контейнере с использованием шаблона языка \texttt{Go} \url{https://metanit.com/go/web/2.2.php}
+
+\begin{lstlisting}[
+numbers = none
+]
+docker inspect --format {{.NetworkSettings.SandboxID}} quizzical_wright
+\end{lstlisting}
+
+Вывести список файлов в работающем контейнере. Для контейнеров \texttt{Docker} использует файловую систему \texttt{UnionFS}, которая позволяет монтировать несколько файловых систем в общую иерархию, которая выглядит как \emph{единая файловая система}. Файловая система конкретного \emph{образа} смонтирована как уровень \emph{только для чтения}, а любые изменения в работающем контейнере происходят на уровне с разрешенной записью, монтируемого поверх основной {файловой системы образа}. Поэтому \texttt{Docker} при поиске изменений в работающей системе должен рассматривать только самый верхний уровень, на котором возможна запись \cite{mouat:docker-2017}
+
+\begin{lstlisting}[
+numbers = none
+]
+docker diff quizzical_wright
+\end{lstlisting}
+
+Вывести список работающих контейнеров
+
+\begin{lstlisting}[
+numbers = none
+]
+docker ps
+\end{lstlisting}
+
+Вывести список всех контейнеров, включая остановленные (stopped)\footnote{Формально их называют контейнерами, из которых был совершен выход (exited containers)}. Такие контейнеры могут быть перезапущены с помощью \texttt{docker start}
+
+\begin{lstlisting}[
+numbers = none
+]
+docker ps -a
+\end{lstlisting}
+
+\subsection{Удаление контейнеров и образов}
+
+Удалить контейнер 
+
+\begin{lstlisting}[
+numbers = none
+]
+docker rm quizzical_wright
+\end{lstlisting}
+
+Удалить несколько остановленных контейнеров можно следующим способом. Значение флагов: \texttt{-a} (все контейнеры), \texttt{-q} (вывести только числовой идентификатор контейнера), \texttt{-f} (фильтр), \texttt{-v} (все тома, на которые не ссылаются какие-либо другие контейнеры)
+
+\begin{lstlisting}[
+numbers = none
+]
+docker rm -v $(docker ps -aq -f status=exited)
+\end{lstlisting}
+
 
 % Источники в "Газовой промышленности" нумеруются по мере упоминания 
 \begin{thebibliography}{99}\addcontentsline{toc}{section}{Список литературы}
-	\bibitem{}{  }
-		
+	\bibitem{mouat:docker-2017}{ \emph{Моуэт Э.} Использование Docker. -- М.: ДМК Пресс, 2017. -- 354 с. }
+	
+	\bibitem{robbins:bash-2017}{ \emph{Роббинс А.} Bash. Карманный справочник системного администратора, 2-е изд.: Пер. с англ. -- СПб.: ООО <<Альфа-книга>>, 2017. -- 152 с.}
 \end{thebibliography}
 
 %\listoffigures\addcontentsline{toc}{section}{Список иллюстраций}

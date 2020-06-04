@@ -33,15 +33,11 @@
 \RequirePackage{textcomp}
 % определяем пользовательские цвета
 \definecolor{mygreen}{rgb}{0,0.6,0}
+\definecolor{light-gray}{gray}{0.97}
 \definecolor{mymauve}{rgb}{0.58,0,0.82}
 \definecolor{deepblue}{rgb}{0,0,0.5}
 \definecolor{deepred}{rgb}{0.6,0.1,0}
 \definecolor{deepgreen}{rgb}{0,0.5,0}
-\definecolor{codegreen}{rgb}{0,0.6,0}
-\definecolor{codegray}{rgb}{0.5,0.5,0.5}
-%\definecolor{codepurple}{HTML}{C42043}
-%\definecolor{backcolor}{HTML}{F2F2F2}
-\definecolor{bookColor}{cmyk}{0,0,0,0.90}
 \definecolor{deeppurple}{named}{Purple}
 \RequirePackage{cmap}
 \RequirePackage{indentfirst} % отступ в первой строке абзаца
@@ -77,7 +73,7 @@
 		{\Large\bfseries\@title}%
 		\end{spacing}
 		%\vskip 1.2em%
-                \vskip 1mm
+                \vskip -8mm
 		{\normalsize
 			%\lineskip .5em%
 			\begin{tabular}[t]{l}%
@@ -159,33 +155,20 @@
 	}\par
 }
 
-\newcommand{\quinta}[1]{%
-    \noindent
-    \parbox{\textwidth}{%
-        \vspace*{7pt}\par
-        \hrule\vspace*{2pt}\hrule\vspace*{5pt}
-        {\small\itshape Обобщение по вопросу }\par
-        {\parindent=7mm\small#1}\vspace*{5pt}
-        \hrule\vspace*{2pt}\hrule\vspace*{5pt}
-    }\par
-}
 \RequirePackage{listings}  % для офрмления листингов программ (альтернатива, например, fancyvrb)
-\lstloadlanguages{
-    XML,
-    SQL,
+\lstloadlanguages{XML,
 	Python,
 	Fortran,
 	command.com,
-	[LaTeX]TeX
+	[LaTeX]TeX,
+    bash
 }  % поддерживаемые языки
 
 % локальные настройки подсветки синтаксиса IronPython Workbench
 \lstdefinestyle{ironpython}{%
 	language = Python,  % базовый язык
 	basicstyle = \fontsize{10pt}{10pt}\ttfamily,  % стиль отображения базовых элементов кода
-	keywords = {try, except, while, yield, or, else, elif, not, and, break, continue, global, 
-    nonlocal, lambda, with, True, False, def, from, import, return, pass, class,for,in,if,as, 
-    None, raise, apply, applymap},  % дополнительные ключевые слова
+	keywords = {try, except, while, yield, or, else, elif, not, and, break, continue, global, nonlocal, lambda, with, True, False, def, from, import, return, pass, class,for,in,if,as, None, raise},  % дополнительные ключевые слова
 	emph = {[2]EOFError, dir, getattr, setattr, eval, enumerate, repr, getattr,
 		map, filter, list, ord, 
 		open, write, exec, super, str, sum, compile, int, input, float, range, abs, print, bool, dict}, % встроенные функции Python
@@ -197,6 +180,14 @@
 	commentstyle = \color{red}\itshape,  % коментарии зеленым цветом, курсив
 	morestring=[s]{'''}{'''},
 	morestring=[s]{"""}{"""}
+}
+
+\lstdefinestyle{bash}{%
+    language = bash,
+    basicstyle = \fontsize{10pt}{10pt}\ttfamily,
+    %keywordstyle = \color{deeppurple},
+    stringstyle = \color{deepgreen},
+    commentstyle = \color{red}\itshape
 }
 
 % локальные настройки подсветки синтаксиса cmd
@@ -216,47 +207,21 @@
 %	}
 }
 
-
-\lstdefinestyle{sql}{
-    language = SQL,
-    %backgroundcolor=\color{backcolor},   
-    commentstyle=\itshape\color{red},
-    keywordstyle=\color{blue},
-    keywords = {recursive, with, union, all, select, from, group, by, where, as, in,
-                when, else, then, case, end, order, update, set, show, to, and, delete,
-                insert, into, returning},
-%   numberstyle=\footnotesize\color{codegray},
-    stringstyle=\itshape\color{deepgreen},
-%   basicstyle=\footnotesize,
-%   breakatwhitespace=false,         
-%   breaklines=true,                 
-%   captionpos=b,                    
-%   keepspaces=true,                 
-%   numbers=left,                    
-%   numbersep=-10pt,                  
-%   showspaces=false,                
-%   showstringspaces=false,
-%   showtabs=false,
-}
-
 % глобальные настройки подсветки синтаксиса
 \lstset{%
 	numberbychapter=true,  % нумерация листинга по номеру главы
-	basicstyle = \fontsize{10pt}{10pt}\ttfamily,  % стиль отображения базовых элементов кода 
+	basicstyle = \fontsize{10pt}{10pt}\ttfamily,  % стиль отображения базовых элементов кода, % стиль отображения базовых элементов кода
 	keepspaces = true,  % чтобы не удалялись пробелы в комментариях
 	basewidth={5pt},  % управляет шириной букв <--- NB!
 	numbers=left,  % где поставить нумерацию строк (слева\справа)
 	numberstyle=\tiny\itshape\color{gray},  % размер шрифта для номеров строк
 	stepnumber=1,  % размер шага между двумя номерами строк
 	numbersep=5pt,  % как далеко отстоят номера строк от подсвечиваемого кода
-	backgroundcolor=\color{white}, % цвет фона подсветки - используем \RequirePackage{color}
+	backgroundcolor=\color{light-gray}, % цвет фона подсветки - используем \RequirePackage{color}
 	showspaces=false,  % показывать или нет пробелы специальными отступами
 	showstringspaces=false,  % показывать или нет пробелы в строках
 	showtabs=false,  % показывать или нет табуляцию в строках
 	frame = tlBR,  % рисовать рамку вокруг кода
-    %framesep=8pt,  % межстроковый интервал
-    %xleftmargin=10pt,
-    %framexleftmargin=40pt,
 	rulesepcolor=\color{black},% создает эффект тени
 	tabsize=2,  % размер табуляции по умолчанию равен 2 пробелам
 	captionpos=t,  % позиция заголовка вверху [t] или внизу [b] 
@@ -350,13 +315,11 @@
 	{Ґ}{{\selectfont\char128}}1
 }
 
-\newcommand{\str}[1]{cтр.~\pageref{#1}}
+\newcommand{\str}[1]{c.~\pageref{#1}}
 \newcommand{\strbook}[1]{стр.~{#1}}
 \newcommand{\tblref}[1]{табл.~\ref{#1}}
-\newcommand{\pic}[1]{рис.~\ref{#1}}
 \newcommand{\abs}[1]{\lvert#1\rvert}
 \newcommand{\snpr}{\sigma^\text{н}_\text{пр}}
 \newcommand{\snh}{\sigma^\text{н}_\text{кц}}
-\newcommand{\psql}{\texttt{PostgreSQL}}
 
 \columnseprule=0.4pt  % рисует вертикальную черту между колонками при наборе в две колонке \documentclass[twocolumn]{article}

@@ -52,7 +52,7 @@ numbers = none
 ]
 docker pull leorfinkelberg/app_name:tag_name
 \end{lstlisting}
-или что то же самое
+или что то же самое (по умолчанию, если хост не указан, используется DockerHub)
 \begin{lstlisting}[
 style = bash,
 numbers = none
@@ -60,7 +60,27 @@ numbers = none
 $ docker pull registry.hub.docker.com/leorfinkelberg/app_name:tag_name
 \end{lstlisting}
 
-Для того чтобы скачать manifest-файл нашего приложения нужно в командной оболочке набрать следующее
+Пытаемся скачать manifest-файл
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ curl -D - -s https://registry.hub.docker.com/v2/leorfinkelberg/manifests/latest
+# вернет
+HTTP/1.1 401 Unauthorized
+Content-Type: application/json
+Docker-Distribution-Api-Version: registry/2.0
+Www-Authenticate: Bearer realm="https://auth.docker.io/token",service="registry.docker.io",scope="repository:leorfinkelberg/myapp:pull"
+Date: Thu, 04 Jun 2020 17:57:01 GMT
+Content-Length: 163
+Strict-Transport-Security: max-age=31536000
+
+{"errors":[{"code":"UNAUTHORIZED","message":"authentication required","detail":[{"Type":"repository","Class":"","Name":"leorfinkelberg/myapp","Action":"pull"}]}]}
+\end{lstlisting}
+
+Здесь флаг \verb|-D| сохраняет заголовки, возвращенные сервером, \verb|-s| заставляет выводить минимум информации.
+
+Возникли сложности с авторизацией. Смотрим на строку \texttt{Www-Authenticate} и на основании информации, приведенной в этой строке, строим запрос
 \begin{lstlisting}[
 style = bash,
 numbers = none
@@ -76,9 +96,7 @@ Strict-Transport-Security: max-age=31536000
 {"token":"eyJhbGciOiJSUzI1NiIsInR5cCI6...}
 \end{lstlisting}
 
-Здесь флаг \verb|-D| сохраняет заголовки, возвращенные сервером, \verb|-s| заставляет выводить минимум информации.
-
-Затем создаем переменную окружения \texttt{REGISTRY\_TOKEN}
+Параметр \verb|scope| описывает запрашиваемые права. Затем создаем переменную окружения \texttt{REGISTRY\_TOKEN}
 \begin{lstlisting}[
 style = bash,
 numbers = none
@@ -86,7 +104,66 @@ numbers = none
 export REGISTRY_TOKEN="eyJhbGciOiJSUzI1NiIsInR5..."
 \end{lstlisting}
 
-А затем 
+А затем конструируем такой запрос и получаем manifest-файл в формате json
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ curl -D - -s -H "Authorization: Bearer $REGISTRY_TOKEN" https://registry.hub.docker.com/v2/leorfinkelberg/myapp/manifests/latest
+# вернет
+HTTP/1.1 200 OK
+Content-Length: 5778
+Content-Type: application/vnd.docker.distribution.manifest.v1+prettyjws
+Docker-Content-Digest: sha256:cb0c53e4c8471a2deb8d22df00646ee2abe81cb11818ed12d0fe4e697ccec93f
+Docker-Distribution-Api-Version: registry/2.0
+Etag: "sha256:cb0c53e4c8471a2deb8d22df00646ee2abe81cb11818ed12d0fe4e697ccec93f"
+Date: Thu, 04 Jun 2020 18:11:59 GMT
+Strict-Transport-Security: max-age=31536000
+
+{
+    "schemaVersion": 1,
+    "name": "leorfinkelberg/myapp",
+    "tag": "latest",
+    "architecture": "amd64",
+    "fsLayers": [
+        {
+            "blobSum": "sha256:bd1a014b71c4b5b06a7f57486a8be2d690fc6034ede049ab63e9e827c9814e5a"
+        },
+...
+    "signatures": [
+        {
+            "header": {
+               "jwk": {
+                   "crv": "P-256",
+                   "kid": "PDNB:TMYN:5AZL:Y3UQ:6ACR:VJER:ON6K:H5XV:AIUX:7ZBZ:2PUD:GUI4",
+                   "kty": "EC",
+                   "x": "o_2HgAeBYjFsEhtDbFsB0afzrwkODIgIsDg7Tslk33o",
+                   "y": "04Wp7S22uBJYbca2CABSBIl8ZkJUksit8dLQDvshhro"
+               },
+               "alg": "ES256
+            },
+            "signature": "eWlDslYAVkLGltlSfB9-Pboa3aWIuKEkaMomNx07xH...",
+            "protected": "eyJmb3JtYXRMZW5ndGgiOjUxMzEsImZvcm1hdFRhaWwiOi..."
+        }
+    ]
+}
+\end{lstlisting}
+
+Сохраняем manifest-файл
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+curl -o manifest.json -s -H "Authorization: Bearer $REGISTRY_TOKEN" https://registry.hub.docker.com/v2/leorfinkelberg/myapp/manifests/latest
+\end{lstlisting}
+
+Контрольные суммы слоев образа можно посмотреть так
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ $ docker inspect --format {{.RootFS.Layers}} leorfinkelberg/myapp
+\end{lstlisting}
 
 
 \subsection{Контейнеры}
@@ -159,6 +236,214 @@ docker build -t test/cowsay-dockerfile .
 numbers = none
 ]
 docker run test/cowsay-dockerfile /usr/games/cowsay 'Moo'
+\end{lstlisting}
+
+\subsection{Пример файла docker-compose.yml}
+
+Рассмотрим в качестве примера файл \texttt{docker-compose.yml} для автоматизации процесса настройки и запуска контейнера
+\begin{lstlisting}[
+style = bash,
+title = {\sffamily docker-compose.yml},
+numbers = none
+]
+registry:
+    restart: always
+    image: registry:2
+    ports:
+        - 443:5000
+    environment:
+        REGISTRY_HTTP_ADDR: 0.0.0.0:5000
+        REGISTRY_HTTP_HOST: https://registry.kis.im
+        REGISTRY_HTTP_TLS_LETSENCRYPT_CACHEFILE: /tmp/le.cache
+        REGISTRY_HTTP_TLS_LETSENCRYPT_EMAIL: ov@rebrain.com
+        REGISTRY_HTTP_TLS_LETSENCRYPT_HOSTS: [registry.kis.im]
+    volumes:
+        - /path/data:/var/lib/registry
+        - /path/cers:/certs
+\end{lstlisting}
+
+Описание. Создаем сервис \texttt{registry} с политикой постоянной перезагрузки. Образ используется официальный \texttt{registry-2}. Пробрасываем 443 порт на 5000 внутрь контейнера.
+
+Для запуска контейнера достаточно набрать
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ docker-compose up -d
+\end{lstlisting}
+
+\subsection{Работа с ключами и сертификатами}
+
+Создать ключ и сертификаты можно с помощью утилиты \texttt{openssl}. Создадим корневой ключ
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ openssl genrsa -out rootCA.key 2048
+\end{lstlisting}
+
+Теперь на основе ключа можно сгенерировать сертификат
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ openssl req -x509 -new -key rootCA.key -days 10000 -out rootCA.crt
+\end{lstlisting}
+
+Ключ
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ cat rootCA.key
+# выведет
+-----BEGIN RSA PRIVATE KEY-----
+MIIEpQIBAAKCAQEA1LAK3Os5wgbTFNGzfqbVTbqjv2ExRI0jvS/wHwIWrPuR19K4
+4TPegK8dM5DaNbWLCs0Lynp4OuWIUt56MLyH1Ewu9xynycOzRP40otmUGtain8HL
+TqPMgA2vvVUA3JbFuN1wsyI9mCdxkSbLH5jwKslkWw9tUPP9k+Mi6NAFF3/RNMPw
+5agJqp05M+9AnlgNchqosMxomdQpkXLZuTr7zWrk5vjXksrvszM4nJABGrbrGTnz
+ZK51aW7brt023fnxU3HwhmkKthvE8oYhyM23c6G+Ti2zpdI8ILlCMfC/rdKJUmEX
+vjuM98zUudxTH6MFVkX8Vq4OUxaVmisXWviGAwIDAQABAoIBAQCkbuY3HnUtGPGg
+qu/G/1zyF1X55D6e7S+wWJugnZDCdEyxO21MTzm666f78gWCeLTiyNxQ0paZklPv
+HaoCe//Xln7I9hKS3wZ+VLqFHQpwJXjdYoq4ZdL5PZudGVbtNHPxFOLI27QbKoOW
+4RMxfqBPtBwueqLdb4WhDH402H7XRsWb9t+bTVtb7agtcjPAvZoV8x5EHlj3LErO
+...
+-----END RSA PRIVATE KEY-----
+\end{lstlisting}
+
+Сертификат
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ cat rootCA.crt
+# выведет
+-----BEGIN CERTIFICATE-----
+MIID9zCCAt+gAwIBAgIUB/wdkhR8j3McjC1vNr/0elcPLoMwDQYJKoZIhvcNAQEL
+BQAwgYoxCzAJBgNVBAYTAlJVMQ8wDQYDVQQIDAZNb3Njb3cxDzANBgNVBAcMBk1v
+c2NvdzEQMA4GA1UECgwHR2F6cHJvbTEQMA4GA1UECwwHT2lsJkdhczELMAkGA1UE
+AwwCQ0ExKDAmBgkqhkiG9w0BCQEWGWxlb3IuZmlua2VsYmVyZ0B5YW5kZXgucnUw
+HhcNMjAwNjA0MTk1NDAzWhcNNDcxMDIxMTk1NDAzWjCBijELMAkGA1UEBhMCUlUx
+DzANBgNVBAgMBk1vc2NvdzEPMA0GA1UEBwwGTW9zY293MRAwDgYDVQQKDAdHYXpw
+cm9tMRAwDgYDVQQLDAdPaWwmR2FzMQswCQYDVQQDDAJDQTEoMCYGCSqGSIb3DQEJ
+ARYZbGVvci5maW5rZWxiZXJnQHlhbmRleC5ydTCCASIwDQYJKoZIhvcNAQEBBQAD
+ggEPADCCAQoCggEBANSwCtzrOcIG0xTRs36m1U26o79hMUSNI70v8B8CFqz7kdfS
+uOEz3oCvHTOQ2jW1iwrNC8p6eDrliFLeejC8h9RMLvccp8nDs0T+NKLZlBrWop/B
+y06jzIANr71VANyWxbjdcLMiPZgncZEmyx+Y8CrJZFsPbVDz/ZPjIujQBRd/0TTD
+8OWoCaqdOTPvQJ5YDXIaqLDMaJnUKZFy2bk6+81q5Ob415LK77MzOJyQARq26xk5
+82SudWlu267dNt358VNx8IZpCrYbxPKGIcjNt3Ohvk4ts6XSPCC5QjHwv63SiVJh
+...
+-----END CERTIFICATE-----
+\end{lstlisting}
+
+Прочитать сертификат
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ openssl x509 -in rootCA.crt -text
+# выведет
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number:
+            07:fc:1d:92:14:7c:8f:73:1c:8c:2d:6f:36:bf:f4:7a:57:0f:2e:83
+        Signature Algorithm: sha256WithRSAEncryption
+        Issuer: C = RU, ST = Moscow, L = Moscow, O = Gazprom, OU = Oil&Gas, CN = CA, emailAddress = leor.finkelberg@yandex.ru
+        Validity
+            Not Before: Jun  4 19:54:03 2020 GMT
+            Not After : Oct 21 19:54:03 2047 GMT
+        Subject: C = RU, ST = Moscow, L = Moscow, O = Gazprom, OU = Oil&Gas, CN = CA, emailAddress = leor.finkelberg@yandex.ru
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+            RSA Public-Key: (2048 bit)
+            Modulus:
+                00:d4:b0:0a:dc:eb:39:c2:06:d3:14:d1:b3:7e:a6:
+                d5:4d:ba:a3:bf:61:31:44:8d:23:bd:2f:f0:1f:02:
+                16:ac:fb:91:d7:d2:b8:e1:33:de:80:af:1d:33:90:
+                da:35:b5:8b:0a:cd:0b:ca:7a:78:3a:e5:88:52:de:
+                7a:30:bc:87:d4:4c:2e:f7:1c:a7:c9:c3:b3:44:fe:
+...
+\end{lstlisting}
+
+Генерируем приватный ключ для \texttt{registry}
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ openssl genrsa -out registry.key 2048
+\end{lstlisting}
+
+И по ключу создаем запрос сертификата с помощью
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ openssl req -new -key registry.key -out registry.csr
+\end{lstlisting}
+
+Подписываем корневым сертификатом ключ, который потом надо будет отдать серверу
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+openssl x509 -req -in registry.csr -CA rootCA.crt -CAkey rootCA.key -CAcreateserial -out registry.crt -days 5000
+# будет создан registry.crt
+\end{lstlisting}
+
+Файл \texttt{docker-compose.yml} будет выглядеть так
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+registry:
+    restart: always
+    image: registry:2
+    ports:
+        - 443:5000
+    environment:
+        REGISTRY_HTTP_ADDR: 0.0.0.0:5000
+        REGISTRY_HTTP_HOST: https://registry.kis.im
+        REGISTRY_HTTP_TLS_CERTIFICATE: /path/to/registry.crt
+        REGISTRY_HTTP_TLS_KEY: /path/to/registry.key
+    volumes:
+        - /path/data:/var/lib/registry
+        - /etc/cers:/etc/certs
+\end{lstlisting}
+
+Скачаем образ и поместим его в \texttt{registry}
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ docker pull alpine:latest
+# перетегируем
+$ docker tag alpine:latest registry.kis.im/leorfinkelberg/alpine:dev
+\end{lstlisting}
+
+Теперь можно отправить перетегированный образ в репозиторий
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ docker push registry.kis.im/leorfinkelberg/alpine:dev
+\end{lstlisting}
+
+Docker может не доверять самоподписанным сертификатам. Чтобы Docker доверял самоподписанным сертификатам нужно создать в \verb|/etc/| приведенную ниже цепочку каталогов и поместить туда сертификат, т.е.
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ cat /etc/docker/certs.d/registry.kis.im/ca.crt
+...
+\end{lstlisting}
+
+Теперь можно скачивать
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ docker pull registry.kis.im/leorfinkelberg/alpine:dev
 \end{lstlisting}
 
 

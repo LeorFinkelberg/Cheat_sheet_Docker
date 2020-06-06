@@ -235,7 +235,7 @@ docker build -t test/cowsay-dockerfile .
 \begin{lstlisting}[
 numbers = none
 ]
-docker run test/cowsay-dockerfile /usr/games/cowsay 'Moo'
+docker run test/cowsay-dockerfile Moo
 \end{lstlisting}
 
 \subsection{Пример файла docker-compose.yml}
@@ -271,6 +271,46 @@ numbers = none
 ]
 $ docker-compose up -d
 \end{lstlisting}
+
+\subsection{Порядок работы с docker-compose}
+
+Обычный порядок работы начинается с выполнения команды для запуска приложения
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+docker-compose up -d
+\end{lstlisting}
+
+Команды \texttt{docker-compose logs} и \texttt{docker-compose ps} могут использоваться для проверки состояния приложения и как вспомогательное средство при отладке.
+
+После внесения изменений в исходный код нужно выполнить
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+docker-compose build
+\end{lstlisting}
+а затем 
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+docker-compose up -d
+\end{lstlisting}
+
+При этом будет создан новый образ и заменен работающий контейнер.
+
+\remark{%
+Compose сохраняет все ранее существовавшие тома из старых контейнеров, таким образом, базы данных и кэши остаются неизменными при переходе к новым версиям контейнеров (это может привести к беспорядку, поэтому будьте осторожны при замене контейнеров)}
+
+Если создание нового образа не требуется, но внесены изменения в docker-compose.yml, то выполните команду \texttt{docker-compose up -d}, чтобы заменить контейнер на точно такой же, но с новыми настройками.
+
+После завершения сеанса работы с приложением выполните команду \texttt{docker-compose stop} для его остановки. Тот же самый комплект контейнеров будет повторно запущен при выполнении команды \texttt{docker-compose start} или \texttt{docker-compose up -d}, если не был изменен исходный код.
+
+Для окончательного удаления набора контейнеров приложения используйте команду \texttt{docker-compose rm}.
+
+
 
 \subsection{Работа с ключами и сертификатами}
 
@@ -519,8 +559,22 @@ IP-адрес состоит из двух логических частей -- 
 style = cmd,
 numbers = none
 ]
+indentidock/
+    -- Dockerfile
+    -- app/
+        -- identidock.py
+    -- cmd.sh
+    -- docker-compose.yml
+\end{lstlisting}
 
-\end{lstlsiting}
+Python-приложение будет выглядеть так
+\begin{lstlisting}[
+style = ironpython,
+title = {\sffamily app/identidock.py},
+numbers = none
+]
+
+\end{lstlisting}
 
 
 \section{Наиболее полезные конструкции}
@@ -617,6 +671,14 @@ docker rm quizzical_wright
 numbers = none
 ]
 docker rm -v $(docker ps -aq -f status=exited)
+\end{lstlisting}
+
+Удалить все образы 
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+docker rmi $(docker images | sed '1d' | awk -F ' ' '{ print $3 }')
 \end{lstlisting}
 
 

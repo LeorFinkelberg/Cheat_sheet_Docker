@@ -554,7 +554,7 @@ IP-адрес состоит из двух логических частей -- 
 
 \section{Пример создания простого web-приложения}
 
-Структура проекта
+Структура проекта \cite[\strbook{99}]{mouat:docker-2017}
 \begin{lstlisting}[
 style = cmd,
 numbers = none
@@ -571,9 +571,115 @@ Python-приложение будет выглядеть так
 \begin{lstlisting}[
 style = ironpython,
 title = {\sffamily app/identidock.py},
+emph = {mainpage, get_identicon},
 numbers = none
 ]
+from flask import Flask, Response, request
+import requests
+import hashlib
+import redis
 
+app = Flask(__name__)
+cache = redis.StrictRedis(host='redis', port=6379, db=0)
+salt = 'UNIQUE_SALT'
+default_name = 'Leor Finkelberg'
+
+@app.route('/', methods=['GET', 'POST'])
+def mainpage():
+    name = default_name
+    if request.method == 'POST':
+        name = request.form['name']
+
+        salted_name = salt + name
+        name_hash = hashlib.sha256(salted_name.encode()).hexdigest()
+        header = '<html><head><title>Identidock</title></head><body>'
+        body = '''<form method='POST'>
+                      Hell <input type='text' name='name' value='{0}'>
+                      <input type='submit' value='submit'>
+                  </form>
+                  <p>You look like a:
+                  <img src='/monster/{1}'/>
+               '''.format(name, name_hash)
+    footer = '</body></html>'
+
+    return header + body + footer
+
+
+@app.route('/monster/<name>')
+def get_identicon(name):
+    image = cache.get(name)
+    if image is None:
+        print('Cache miss', flush=True)
+        r = requests.get('http://dnmonster:8080/monster/' + name + '?size=80')
+        image = r.content
+        cache.set(name, image)
+
+    return Response(image, mimetype='image/png')
+
+
+if __name__ == '__main__':
+    app.run(debug = True, port = 5000)
+\end{lstlisting}
+
+bash-сценарий управляет режимами запуска приложения
+\begin{lstlisting}[
+style = bash,
+title = {\sffamily ./cmd.sh},
+numbers = none
+]
+#!/bin/bash
+set-e
+
+if [[ "$ENV" == 'DEV' ]]; then
+    echo 'Running Development Server'
+    exec python 'identidock.py'
+else
+    echo 'Running Production Server'
+    ...
+fi
+\end{lstlisting}
+
+\begin{lstlisting}[
+style = bash,
+title = {\sffamily ./Dockerfile},
+numbers = none
+]
+FROM python:3.5
+
+RUN groupadd -r uwsgi && useradd -r -g uwsgi uwsgi
+RUN pip install Flask==1.1.1 gunicorn==20.0.0 requests==2.22.0 redis==3.5.0
+WORKDIR /app
+COPY app /app
+COPY cmd.sh /
+
+EXPOSE 9090 9191
+USER uwsgi
+
+CMD ["/cmd.sh"]
+\end{lstlisting}
+
+\begin{lstlisting}[
+style = bash,
+title = {\sffamily ./docker-compose.yml},
+numbers = none
+]
+identidock:
+    build: .
+    ports: 
+        - "5000:5000"
+    environment:
+        ENV: DEV
+    volumes:
+        - "./app:/app"
+    links:
+        - dnmonster
+        - redis
+
+dnmonster:
+    image: amouat/dnmonster:1.0
+
+redis:
+    image: redis:alpine3.12
 \end{lstlisting}
 
 

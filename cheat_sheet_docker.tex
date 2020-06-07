@@ -486,7 +486,128 @@ numbers = none
 $ docker pull registry.kis.im/leorfinkelberg/alpine:dev
 \end{lstlisting}
 
+\subsection{Организация собственного реестра}
 
+Простейшим способом создания \emph{локального реестра} является использование официального образа
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+docker run -d -p 5000:5000 registry:2
+\end{lstlisting}
+
+Теперь у нас есть работающий реестр, и можем присваивать образам соответствующие теги и выгружать их в этот реестр. При использовании механизма docker-machine остается возможность указания адреса localhost.
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+# создаем псевдоним для образа amouat/identidock:0.1 в пространстве имен localhost:5000
+$ docker tag amouat/identidock:0.1 localhost:5000/identidock:0.1
+$ docker push localhost:5000/identidock:0.1
+\end{lstlisting}
+
+Если сейчас удалить локальную версию, то в любой момент можно извлечь ее из локального реестра
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ docker rmi localhost:5000/identidock:0.1
+$ docker pull localhost:5000/identidock:0.1
+\end{lstlisting}
+
+Образы можно извлекать по дайджесту\footnote{Уникальное хэш-значение на основании содержимого образа и его метаданных}
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ docker pull localhost:5000/identidock@sha256:d20...45345
+\end{lstlisting}
+
+Главным преимуществом использования дайджеста является абсолютная гарантия того, что извлекается в точности тот образ, который нужен пользователю. При извлечении (загрузке) по тегу можно оказаться в ситуации, когда имя тегированного образа было изменено, а пользователь об этом не знает.
+
+Главное обоснование использования частного (локального) реестра -- необходимость организации централизованного хранилища для группы разработчиков или всей организации. Это означает, что потребуется возможность загрузки образов из реестра, выполняемая удаленным демоном Docker. Но при попытке обращения к локальному реестру из вне, будет получена ошибка <<Error response from daemon: unable to ping registry endpoint>>.
+
+Попробуем разобраться в том, что произошло. Демон Docker запретил соединение с удаленным хостом, так как этот хост не имеет действительного сертификата TLS (Transport Layer Security). До этого установление соединения разрешалось только потому, что в механизме Docker предусмотрено особое исключение для загрузки с серверов, расположенных на локальном хосте (то есть по адресу localhost).
+
+Возникшую проблему можно решить одним из трех способов:
+\begin{itemize}
+	\item перезапустить каждый демон Docker, которому требуется доступ к нашему реестру с аргументом \verb|--insecure-registry 192.168.1.100:5000|\footnote{Разумеется нужно указывать адрес и номер порта, который вы выбрали для своего сервера},
+	
+	\item установить на хосте реестра подписанный сертификат от аккредитованного центра сертификации,
+	
+	\item установить на хосте реестра самоподписанный сертификат и скопировать его на все хосты демонов Docker, которым должен быть предоставлен доступ к этому реестру.
+\end{itemize}
+
+Для создания собственного \emph{самоподписанного сертификата} можно воспользоваться утилитой OpenSSL. Все операции должны быть выполнены на компьютере, который предполагается использовать в качестве сервера в течение длительного времени
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+~$ mkdir registry_certs
+~$ openssl req -newkey rsa:4096 -nodes -sha256 -keyout registry_certs/domain.key -x509 \
+-days 365 -out registry_certs/domain.crt
+\end{lstlisting}
+
+Здесь создается самоподписанный сертификат x509 и 4096-битный закрытый ключ по алгоритму RSA. Сертификат подписан с помощью дайджеста SHA256 и действителен в течение 365 дней. После завершения процесса мы получаем файл сертификата \texttt{domain.crt}, который будет совместно использоваться всеми клиентами, и закрытый ключ \texttt{domain.key}, который следует хранить в безопасном месте, исключив возможность постороннего доступа к нему.
+
+Теперь необходимо скопировать сертификат в каждую систему демона Docker, которому потребуется доступ к реестру. Копирование должно быть выполнено в файл
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+/etc/docker/certs.d/<адрес_реестра>/ca.crt
+\end{lstlisting}
+где \verb|<адрес_реестра>| -- это адрес (имя) и номер порта конкретного сервера реестра. Также потребуется перезапустить демон Docker. Например
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+~$ sudo mkdir -p /etc/docker/certs.d/reginald:5000
+~$ sudo cp registry_certs/domain.crt /etc/docker/certs.d/reginald:5000/ca.crt
+~$ sudo service docker restart
+\end{lstlisting}
+
+Теперь можно запустить реестр
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ docker run -d -p 5000:5000 -v $(pwd)/registry_certs:/certs \
+    -e REGISTRY_HTTP_TLS_CERTIFICATE=/certs/domain.crt \
+    -e REGISTRY_HTTP_TLS_KEY=/certs/domain.key \
+    --restart=always  --name registry registry:2
+\end{lstlisting}
+
+Здесь подкаталог \texttt{registry\_certs} файловой системы хоста монтируется на каталог \texttt{/certs} внутри контейнера. Таким образом из-под каталога \texttt{/certs} внутри контейнера будут доступны \texttt{*.crt} и \texttt{*.key}.
+
+Выполним операции извлечения образа, замены его тега и возврата (выгрузки) обратно в реестр, чтобы убедиться в работоспособности нового реестра
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+root@reginald:~$ docker pull debian:wheezy
+root@reginald:~$ docker tag debian:wheezy reginlad:5000/debian:local
+root@reginald:~$ docker push reginald:5000/debian:local
+\end{lstlisting}
+
+Итак, мы получили реестр с возможностью удаленного доступа к нему с обеспечением безопасной работы и безопасного хранения образов. При тестировании реестра с удаленных компьютеров не забудьте скопировать сертификаты в файл \texttt{/etc/docker/certs.d/<адрес\_реестра>/ca.crt} на компьютерах с работающими механизмами Docker.
+
+\paragraph{Хранилище} По умолчанию образ реестра использует драйвер файловой системы, который вполне ожидаемо сохраняет все данные и образы в соответствующей файловой системе.
+
+\subsection{Сокращение размера образа}
+
+Образ формируется из нескольких уровней, причем каждый уровень создается отдельной командой из соответствующего файла Dockerfile и его родительских файлов Dockerfile. Общий конечный размер образа представляет собой сумму размеров всех его уровней.
+
+Если файл удаляется на том же уровне, на котором он создается, то такой файл не включается в образ. Поэтому часто встречаются файлы Dockerfile, которые загружают tar-архивы или архивы других форматов, распаковывают их и сразу же удаляют архивный файл в одной инструкции \texttt{RUN}. Например, в официальный образ MongoDB включена следующая инструкция
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+RUN curl -SL "https://${MONGO_VERSION}.tgz" -o mongo.tgz \
+    && curl -SL "https://${MONGO_VERSION}.tgz.sig" -o mongo.tgz.sig \
+    && gpg --verify mongo.tgz.sig && tar -xvf mongo.tgz -C /usr/local --strip-components=1 \
+    && rm mongo.tgz*
+\end{lstlisting}
 
 \section{Общие сведения о компьютерных сетях}
 
@@ -628,11 +749,21 @@ title = {\sffamily ./cmd.sh},
 numbers = none
 ]
 #!/bin/bash
-set-e
+
+exit_on_signal_SIGINT () {
+    echo "Script interrupted." 2>&1
+    exit 0  # << для того чтобы прекратить выполнение программы!
+}
+
+# будет реагировать на прерывание
+trap exit_on_signal_SIGINT SIGINT
 
 if [[ "$ENV" == 'DEV' ]]; then
     echo 'Running Development Server'
     exec python 'identidock.py'
+elif [[ "$ENV" == 'UNIT' ]]; then
+    echo 'Running Unit Tests'
+    exec python 'test.py'  # файл test.py должен размещаться в app/
 else
     echo 'Running Production Server'
     ...
@@ -656,6 +787,15 @@ EXPOSE 9090 9191
 USER uwsgi
 
 CMD ["/cmd.sh"]
+\end{lstlisting}
+
+Запустить приложение в режиме тестирования можно так
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ docker build -t identidock .  # создать образ на основе Dockerfile
+$ docker run -e ENV=UNIT identidock
 \end{lstlisting}
 
 \begin{lstlisting}[

@@ -854,7 +854,7 @@ CONTAINER ID  IMAGE  STATUS       ... PORTS     NAMES
 numbers = none
 ]
 # обязательно нужно указать /bin/bash
-$ docker run -it --rm --link myredis:redis /bin/bash
+$ docker run -it --rm --link myredis:redis redis /bin/bash
 root@5cab704887ff:/data# redis-cli -h redis -p 6379
 redis:6379> set "Ansys" "MAPDL"  # OK
 redis:6379> set "Nastran" "Python"  # OK

@@ -1189,6 +1189,337 @@ docker rmi $(docker images | sed '1d' | awk -F ' ' '{ print $3 }')
 
 Docker registry не предназначен для хранения больших файлов, поэтому лучше тяжелые python-сценарии, которые требуют тяжелых библиотек (PyTorch, TF etc), не размещать в docker-образе. Модель может храниться, например, в облачном хранилище S3. Это хранилище прекрасно приспособлено для долгого хранения больших файлов. Кроме того, если docker-образ тяжелый, то он дольше скачивается и дольше разворачивается.
 
+\subsection{Полное руководство по созданию Docker-образа для обслуживания системы машинного обучения в продакшене}
+
+Источник: \url{https://habr.com/ru/company/mailru/blog/548480/}
+
+Важные замечания:
+\begin{itemize}
+	\item Файл \texttt{requirements.txt} всегда должен содержать \emph{версию пакета} Python. Никогда не пишите просто название пакета, иначе всегда будут устанавливаться последняя версия пакета, а пользы от Docker в таком случае не будет никакой,
+	
+	\item Всегда группируйте похожие команды \texttt{RUN}, которые оперируют на одном уроне Docker. Например
+\begin{lstlisting}[
+style = bash,
+numbers = none	
+]
+RUN apt update && \
+apt install --no-install-recommends -y build-essential \
+gcc curl ca-certificates python3 && \
+apt clean && rm -rf /var/lib/apt/lists/*
+\end{lstlisting}
+
+   \item Используйте с \texttt{pip} флаг \verb|--no-cache-dir| в качестве целевой эксплуатационной среды
+\begin{lstlisting}[
+style = bash,
+numbers = none	
+]
+RUN pip install --no-cache-dir --user -r /req.txt
+\end{lstlisting}
+
+    \item Используйте \texttt{.dockerignore}, чтобы избежать ненужного контекста сборки. Это работает так же, как \texttt{.gitignore}
+    
+    \item Когда это возможно используйте slim-версию базового образа, например, \texttt{python:buster-slim} etc.
+    
+    \item Избегайте базовых Docker-образов на основе Alpine (они плохо работают с Python).
+\end{itemize}
+
+\paragraph{Одноэтапная сборка образа}
+
+Во время одного процесса сборки будут выполнены все задачи. Последовательность действий: выберете базовый образ, установите пакеты ОС, скопируйте исходники, установите пакеты, задайте точку входа (если нужно) или другие команды.
+
+Пример одноэтапной сборки
+
+\begin{minipage}[t]{0.55\textwidth}
+	\begin{lstlisting}[
+	title = {\sffamily Dockerfile},
+	style = bash,
+	numbers = none	
+	]
+	FROM python:3.8-slim
+	
+	RUN apt update && \
+	  apt install --no-install-recommends -y \
+	  build-essential gcc && \
+	  apt clean && rm -rf /var/lib/apt/lists/*
+	  
+	COPY ./req.txt /req.txt
+	COPY ./src /src
+	
+	RUN pip3 install --no-cache-dir -r /req.txt
+	CMD ["python3", "/src/app.py"]
+	
+	EXPOSE 8080
+	\end{lstlisting}
+\end{minipage}
+\hspace*{5mm}
+\begin{minipage}[t]{0.4\textwidth}
+	\begin{lstlisting}[
+	title = {\sffamily req.txt},
+	style = bash,
+	numbers = none	
+	]
+	tensorflow==2.2.0
+	scikit-learn==0.24.1
+	pytest==6.2.2
+	pandas==1.2.1
+	...
+	\end{lstlisting}
+\end{minipage}
+
+Одноэтапная сборка очень проста и подходит для многих сценариев. Это нормальная практика, но у нее есть фундаментальные недостатки, особенно с точки зрения проектов на Python. Важно с \texttt{apt} использовать флаг \verb|--no-install-recommends|, а с \texttt{pip} -- флаг \verb|--no-cache-dir|. Нам не нужно сохранять кэш, потому что он не нужен ни для среды разработки, ни для эксплуатационной среды. Если вы используете какую-нибудь CI/CD-платформу (вроде Github action), с ограниченным размером хранилища, то она будет работать только если используются описанные флаги.
+
+Библиотеки Python из коробки не работают, сначала их нужно скомпилировать на C. Нас интересует лишь скомпилированная часть библиотек, остальное не нужно. При выполнении \texttt{pip install} все библиотеки \emph{сначала скачиваются}, а \emph{затем компилируются}.
+
+Нужно удалить все промежуточные и дополнительные компоненты, созданные при установке библиотек. Для этого можно использовать bash-команды. Однако есть вероятность все сломать. Исправить ситуацию может многоэтапная сборка (Docker multi-stage builds).
+
+\paragraph{Многоэтапная сборка} Это один из самых эффективных методов оптимизации, сохраняющий удобство чтения и сопровождения образов.
+
+При многоэтапной сборке используется несколько инструкций \texttt{FROM}. Каждая такая инструкция может оперировать разными базовыми образами (каждая инструкция \texttt{FROM} начинает новый этап сборки). Можно выборочно копировать артефакты из одного этапа в другой, отбрасывая все, что вам не нужно конечном образе.
+
+Пример
+\begin{lstlisting}[
+title = {\sffamily Dockerfile},
+style = bash,
+numbers = none	
+]
+# Stage 1: Builder/Compiler
+FROM python:3.7-slim as builder # builder -- это имя этапа
+RUN apt update && \
+  apt install --no-install-recommends -y \
+  build-essential gcc
+COPY req.txt /req.txt
+
+# флаг --user очень важен! без него не работает `COPY --from` с указанными ниже путями
+RUN pip install --no-cache-dir --user -r /req.txt
+
+# Stage 2: Runtime
+FROM debian:buster-slim
+RUN apt update && \
+  apt install --no-install-recommends -y \
+  build-essential python3 && \
+  apt clean && rm -rf /var/lib/apt/lists/*
+  
+COPY --from=builder /root/.local/lib/python3.7/site-packages /usr/local/lib/python3.7/dist-packages
+COPY ./src /src
+CMD ["python3", "/src/app.py"]
+EXPOSE 8080
+\end{lstlisting}
+
+Здесь команда \texttt{apt update} обновляет списки пакетов из репозиториев. Команда \texttt{apt install --no-install-recommends -y python3} устанавливает Python версии 3, отвечая на все возникающие вопросы да (\verb|-y|) и не устанавливая рекомендуемые пакеты.
+
+На первом этапе устанавливаются библиотеки Python: они сначала скачиваются, а затем компилируются на C, для этого мы установили \texttt{gcc}. Затем мы просто копируем \emph{скомпилированные библиотеки} из первого этапа во второй с помощью этой команды
+\begin{lstlisting}[
+style = bash,
+numbers = none	
+]
+COPY --from=<stage 1> stage1/src stage2/destination
+\end{lstlisting}
+
+В результате этих манипуляций размер образа уменьшится, но не сильно. С другими языками разница будет колоссальной, но у Python есть несколько фокусов:
+\begin{itemize}
+	\item сейчас многие библиотеки распространяются в виде предварительно скомпилированных whl-файлов (это формат wheel из PyPI), поэтому их компилировать не требуется,
+	
+	\item то есть в случае, когда библиотеки распространяются в виде предварительно скомпилированных файлов, многоэтапной сборке негде развернуться. Однако не все пакеты PyPI распространяются в скомпилированном виде; многие поставляются в формате \texttt{tar.gz} и их нужно сначала скомпилировать.
+\end{itemize}
+
+\paragraph{Сборка Docker-образа для любого проекта на Python (GPU)} Собирать docker-образ для CPU не трудно, чего не скажешь о сборке образа для GPU. Если ошибиться, то размер будет огромный.
+
+TensorFlow и Pytorch используют видеодрайверы NVIDIA CUDA. Поэтому сначала нужно установить на хостовую машину свежие драйверы NVIDIA CUDA, а также соответствующую cuDNN.
+
+После этого нужно установить \texttt{nvidia-docker2}, позволяющий движку Docker обращаться к видеодрайверам NVIDIA. Самое важное -- выбрать правильную версию/тег CUDA, cuDNN для NVIDIA-docker-образа, а также записать туда TensorFlow/Pytorch. Тогда система машинного обучения сможет использовать видеокарту.
+
+Рекомендации
+\begin{itemize}
+	\item всегда используйте в docker-образе те же версии CUDA и cuDNN, что и на хостовой машине,
+	
+	\item не устанавливайте бездумно самую свежую версию библиотеки TensorFlow/Pytorch из PyPI. Не каждая версия этих пакетов будет работать с любой версией CUDA и cuDNN,
+	
+	\item самое важное: в docker-hub есть много образов NVIDIA, так что перед тем скачать ту или иную версию, нужно выяснить какая именно версия нужна (выбирать нужно версии, помеченные тегами base или runtime).
+\end{itemize}
+
+Для выбора тега есть эмпирическое правило
+\begin{enumerate}
+	\item проверить версию CUDA и cuDNN на хостовой машине: для примера, cudnn 7.6.5 и cuda10.1\_0,
+	
+	\item в зависимости от результатов шага 1 выбрать версию docker-образа, например, nvidia/cuda:10.1-cudnn7-runtime,
+	
+	\item выбрать правильную версию TensorFlow/Pytorch, которая совместима с вашей версией CUDA и cuDNN, например, TensorFlow 2.20. 
+\end{enumerate}
+
+Пример \emph{одноэтапной} сборки docker-образа (GPU)
+\begin{lstlisting}[
+style = bash,
+numbers = none	
+]
+FROM nvidia/cuda:10.1-cudnn7-runtime
+
+RUN apt update && \
+  apt install --no-install-recommends -y build-essential software-properties-common && \
+  add-apt-repository -y ppa:deadsnakes/ppa && \
+  apt install --no-install-recommends -y python3.8 python3-pip python3-set uptools python3-distutils && \
+  apt clean && run -rf /var/lib/apt/lists/*
+  
+COPY req.txt /req.txt
+COPY ./src /src
+RUN python3.8 -m pip install --upgrade pip && \
+  python3.8 -m pip install --no-cache-dir --user -r /req.txt
+CMD ["python3", "/src/app.py"]
+EXPOSE 8080
+\end{lstlisting}
+
+Пример \emph{многоэтапной} сборки docker-образа (GPU)
+\begin{lstlisting}[
+style = bash,
+numbers = none	
+]
+# Stage 1: Builder/Compiler
+FROM python:3.8-slim as builder
+RUN apt update && \
+  apt install --no-install-recommends -y build-essential gcc
+COPY req.txt /req.txt
+
+RUN pip install --no-cache-dir --user -r /req.txt
+
+# Stage 2: Runtime
+FROM nvidia/cuda:10.1-cudnn7-runtime
+
+RUN apt update && \
+  apt install --no-install-recommends -y build-essential software-properties-common && \
+  add-apt-repository -y ppa:deadsnakes/ppa && \
+  apt install --no-install-recommends -y python3.8 python3-distutils && \
+  update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.6 1 && \
+  update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.8 2 && \
+  apt clean && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /root/.local/lib/python3.8/site-packages /usr/local/lib/python3.8/dist-packages
+COPY ./src /src
+CMD ["python3", "/src/app.py"]
+EXPOSE 8080
+\end{lstlisting}
+
+ВАЖНО: всегда рекомендуется использовать многоэтапную сборку, она в любом случае улучшает читаемость.
+
+Даже после сборки с соблюдением всех правил и советов нужно исследовать образ на возможность дополнительных улучшений. \texttt{Dive} \url{} -- прекрасный инструмент для исследования образа, содержимого слоев и поиска способов уменьшить размер Docker/OCI-образа.
+
+У Dive есть две очень полезные метрики
+\begin{itemize}
+	\item возможная трата места на диске,
+	
+	\item оценка эффективности образа.
+\end{itemize}
+
+Но его лучшая возможность -- интеграция с любым CI-инструментом. Для обеих метрик можно указать условие, и если оно не выполняется, то и CI-задача тоже не выполняется. Поэтому мы всегда можем доверять docker-образу, созданному с помощью CI-задачи.
+
+Когда \texttt{dive} запускается с переменной окружения \texttt{CI=true}, то вместо запуска интерфейса пользователя выполняется анализ docker-образа
+
+\begin{lstlisting}[
+style = bash,
+numbers = none	
+]
+CI=true dive 0a2c..e7
+\end{lstlisting}
+
+На текущий момент поддерживается три метрики качества docker-образа, которые можно включить в файл \texttt{.dive-ci}. Сам файл \texttt{.dive-ci} должен находится в корне проекта
+\begin{lstlisting}[
+title = {\sffamily .dive-ci},
+style = bash,
+numbers = none	
+]
+rules:
+	# If the efficiency is measured below X%, mark as failed.
+	# Expressed as a ratio between 0-1.
+	lowestEfficiency: 0.95
+
+	# If the amount of wasted space is at least X or larger than X, mark as failed.
+	# Expressed in B, KB, MB, and GB.
+	highestWastedBytes: 20MB
+
+	# If the amount of wasted space makes up for X% or more of the image, mark as failed.
+	# Note: the base image layer is NOT included in the total image size.
+	# Expressed as a ratio between 0-1; fails if the threshold is met or crossed.
+	highestUserWastedPercent: 0.20
+\end{lstlisting} 
+
+Dive можно сконфигурировать с помощью файла \texttt{.dive.yaml}
+\begin{lstlisting}[
+title = {\sffamily .dive.yaml},
+style = bash,
+numbers = none	
+]
+# supported options are "docker" and "podman"
+container-engine: docker
+# continue with analysis even if there are errors parsing the image archive
+ignore-errors: false
+log:
+	enabled: true
+	path: ./dive.log
+	level: info
+
+# Note: you can specify multiple bindings by separating values with a comma.
+# Note: UI hinting is derived from the first binding
+keybinding:
+	# Global bindings
+	quit: ctrl+c
+	toggle-view: tab
+	filter-files: ctrl+f, ctrl+slash
+	
+	# Layer view specific bindings
+	compare-all: ctrl+a
+	compare-layer: ctrl+l
+
+	# File view specific bindings
+	toggle-collapse-dir: space
+	toggle-collapse-all-dir: ctrl+space
+	toggle-added-files: ctrl+a
+	toggle-removed-files: ctrl+r
+	toggle-modified-files: ctrl+m
+	toggle-unmodified-files: ctrl+u
+	toggle-filetree-attributes: ctrl+b
+	page-up: pgup
+	page-down: pgdn
+
+diff:
+# You can change the default files shown in the filetree (right pane). All diff types are shown by default.
+	hide:
+		- added
+		- removed
+		- modified
+		- unmodified
+
+filetree:
+	# The default directory-collapse state
+	collapse-dir: false
+
+	# The percentage of screen width the filetree should take on the screen (must be >0 and <1)
+	pane-width: 0.5
+
+	# Show the file attributes next to the filetree
+	show-attributes: true
+
+layer:
+	# Enable showing all changes from this layer and every previous layer
+	show-aggregated-changes: false
+\end{lstlisting}
+
+Dive ожидает обнаружить конфигурационный файл \texttt{.dive.yaml} по следующим путям
+\begin{itemize}
+	\item \verb|$XDG_CONFIG_HOME/dive/*.yaml|,
+	
+	\item \verb|$XDG_CONFIG_DIRS/dive/*.yaml|,
+	
+	\item \verb|~/.config/dive/*.yaml|,
+	
+	\item \verb|~/.dive.yaml|.
+\end{itemize}
+
+Установить Dive на MacOS X можно с помощью \texttt{brew}
+\begin{lstlisting}[
+style = bash,
+numbers = none	
+]
+brew install dive
+\end{lstlisting}
+
+
 
 % Источники в "Газовой промышленности" нумеруются по мере упоминания 
 \begin{thebibliography}{99}\addcontentsline{toc}{section}{Список литературы}

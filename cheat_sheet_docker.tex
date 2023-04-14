@@ -161,6 +161,16 @@ docker build --build-arg buildtime_variable=a_value ...
 
 То есть можно изменять значение переменной \verb|buildtime_variable| без необходимости вносить изменения в \texttt{Dockerfile}.
 
+Можно использовать конструкции со значением по умолчанию
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+# использовать указанную переменную APP_NAME, если она установлена, а иначе заданное значение default_app_name
+ARG APP_NAME=${APP_NAME:-default_app_name}
+...
+\end{lstlisting}
+
 \texttt{ENTRYPOINT}: также позволяет задавать дефолтные команды и аргументы во время запуска контейнера. Аргументы командной строки, передаваемые \texttt{docker run my\_image\_name}, добавляются к аргументам инструкции \texttt{ENTRYPOINT}. Например,
 \begin{lstlisting}[
 style = bash,
@@ -835,7 +845,7 @@ IP-адрес состоит из двух логических частей -- 
 
 Структура проекта \cite[\strbook{99}]{mouat:docker-2017}
 \begin{lstlisting}[
-style = cmd,
+style = bash,
 numbers = none
 ]
 indentidock/

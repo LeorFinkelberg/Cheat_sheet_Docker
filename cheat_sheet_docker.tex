@@ -216,6 +216,58 @@ conda install -c conda-forge docker-py
 
 То есть на операционных системах Windows и MacOS X для того, чтобы можно было работать с Docker, требуется поднять виртуальную машину Linux VM, внутри которой будут существовать docker-демон и контейнеры.
 
+\subsection{Установка на Centos 7}
+
+\url{https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-on-centos-7}
+
+Обновить базу данных пакетов
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+sudo yum check-update
+\end{lstlisting}
+
+Получить официальный репозиторий Docker, скачать и установить
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+curl -fsSL https://get.docker.com/ | bash
+\end{lstlisting}
+
+Запустить Docker-демона
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+sudo systemctl start docker
+\end{lstlisting}
+
+Проверить статус
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+sudo systemctl status docker
+\end{lstlisting}
+
+По умолчанию для запуска \verb|docker| требуются права суперпользователя (root), т.е.
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ sudo docker ps -a
+\end{lstlisting}
+
+Чтобы не писать каждый раз \verb|sudo docker|, можно добавить свое имя в группу docker
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+sudo usermod -aG docker username
+\end{lstlisting}
+
 \subsection{Анализ manifest-файлов Docker}
 
 Чтобы извлечь данные с удаленного репозитория нужно воспользоваться конструкцией

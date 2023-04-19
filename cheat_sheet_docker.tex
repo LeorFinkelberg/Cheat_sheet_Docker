@@ -1251,6 +1251,74 @@ docker rmi $(docker images | sed '1d' | awk -F ' ' '{ print $3 }')
 
 Docker registry не предназначен для хранения больших файлов, поэтому лучше тяжелые python-сценарии, которые требуют тяжелых библиотек (PyTorch, TF etc), не размещать в docker-образе. Модель может храниться, например, в облачном хранилище S3. Это хранилище прекрасно приспособлено для долгого хранения больших файлов. Кроме того, если docker-образ тяжелый, то он дольше скачивается и дольше разворачивается.
 
+\subsection{Условная сборка образа}
+
+\url{https://stackoverflow.com/questions/43654656/dockerfile-if-else-condition-with-external-arguments}
+
+Если требуется, чтобы наборы Docker-команд выполнялись в зависиомости от каких-то условий, то эти наборы можно обернуть конструкцией вида
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+ARG my_arg  # будет принимать значение от --build-arg my_arg=...
+
+FROM centos:7 AS base
+...
+
+FROM base AS branch-condition1
+...
+
+FROM base AS branch-conditoin2
+...
+
+FROM branch-${my_arg} AS final  # выбирает одну из нескольких веток в зависимости от значения my_arg
+RUN echo ...
+\end{lstlisting}
+
+Пример
+\begin{lstlisting}[
+title = {\sffamily Dockerfile},
+style = bash,
+numbers = none
+]
+ARG solver_method_arg
+
+FROM centos:7 AS base
+RUN echo "Start ..."
+
+FROM base AS branch-simplex
+RUN echo ...
+ENV SOLVER_METHOD=simplex
+
+FROM base AS branch-ipm
+RUN echo ...
+ENV SOLVER_METHOD=ipm
+
+FROM branch-${solver_method_arg} AS final  # выбирает или branch-simplex или branch-ipm
+RUN echo "ENV SOLVER_METHOD=${SOLVER_METHOD}"
+\end{lstlisting}
+
+Запускаем сборку
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ sudo docker build --build-arg solver_method_arg=simplex -t if_else_simplex .
+[+] Building 0.5s (8/8) FINISHED
+=> [internal] load .dockerignore                                                                                           0.0s
+=> => transferring context: 2B                                                                                             0.0s
+=> [internal] load build definition from Dockerfile                                                                        0.1s
+=> => transferring dockerfile: 415B                                                                                        0.0s
+=> [internal] load metadata for docker.io/library/centos:7                                                                 0.5s
+=> [base 1/2] FROM docker.io/library/centos:7@sha256:be65f488b7764ad3638f236b7b515b3678369a5124c47b8d32916d6487418ea4      0.0s
+=> CACHED [base 2/2] RUN echo "start"                                                                                      0.0s
+=> CACHED [branch-simplex 1/1] RUN echo "Build image with simplex"                                                         0.0s
+=> CACHED [final 1/1] RUN echo "SOLVER_METHOD=simplex"                                                                     0.0s
+=> exporting to image                                                                                                      0.0s
+=> => exporting layers                                                                                                     0.0s
+=> => writing image sha256:a4f2595a9a33f643fa064e2824c5e9a231be5c8ad6e85579c6c47deec7936069                                0.0s
+\end{lstlisting}
+
 \subsection{Полное руководство по созданию Docker-образа для обслуживания системы машинного обучения в продакшене}
 
 Источник: \url{https://habr.com/ru/company/mailru/blog/548480/}

@@ -1353,6 +1353,13 @@ RUN pip install --no-cache-dir --user -r /req.txt
     \item Избегайте базовых Docker-образов на основе Alpine (они плохо работают с Python).
 \end{itemize}
 
+Рекомендации по улучшению docker-образа можно получить с помощью hadolint \url{https://github.com/hadolint/hadolint}. Можно установить утилиту локально, а можно пользоваться браузерным решением \url{https://hadolint.github.io/hadolint/}
+\begin{itemize}
+	\item Вместо \verb|apt| (предназначен для конечного пользователя) следует использовать \verb|apt-get|,
+	
+	\item и т.д.
+\end{itemize}
+
 \paragraph{Одноэтапная сборка образа}
 
 Во время одного процесса сборки будут выполнены все задачи. Последовательность действий: выберете базовый образ, установите пакеты ОС, скопируйте исходники, установите пакеты, задайте точку входа (если нужно) или другие команды.
@@ -1370,7 +1377,7 @@ RUN pip install --no-cache-dir --user -r /req.txt
 	RUN apt update && \
 	  apt install --no-install-recommends -y \
 	  build-essential gcc && \
-	  apt clean && rm -rf /var/lib/apt/lists/*
+	  apt clean && rm -rf /var/lib/apt/lists/*  # Для Debian и Ubuntu это не нужно!!!
 	  
 	COPY ./req.txt /req.txt
 	COPY ./src /src
@@ -1420,20 +1427,22 @@ RUN apt update && \
 COPY req.txt /req.txt
 
 # флаг --user очень важен! без него не работает `COPY --from` с указанными ниже путями
-RUN pip install --no-cache-dir --user -r /req.txt
+RUN pip install --no-cache-dir -r /req.txt
 
 # Stage 2: Runtime
 FROM debian:buster-slim
 RUN apt update && \
   apt install --no-install-recommends -y \
   build-essential python3 && \
-  apt clean && rm -rf /var/lib/apt/lists/*
+  apt clean && rm -rf /var/lib/apt/lists/*  # Official Debian and Ubuntu images automatically run apt-get clean, so explicit is not required!!!
   
 COPY --from=builder /root/.local/lib/python3.7/site-packages /usr/local/lib/python3.7/dist-packages
 COPY ./src /src
 CMD ["python3", "/src/app.py"]
 EXPOSE 8080
 \end{lstlisting}
+
+{\color{red} Официальные образы Debain и Ubuntu автоматически запускают \verb|apt-get| для очистки, поэтому явный вызов не требуется!!!}
 
 Здесь команда \texttt{apt update} обновляет списки пакетов из репозиториев. Команда \texttt{apt install --no-install-recommends -y python3} устанавливает Python версии 3, отвечая на все возникающие вопросы да (\verb|-y|) и не устанавливая рекомендуемые пакеты.
 

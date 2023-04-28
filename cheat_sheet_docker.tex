@@ -1743,6 +1743,53 @@ USER user
 
 Здесь создаются группа \verb|user_grp| и новый пользователь \verb|user|, принадлежащий этой группе. Инструкция \verb|USER| будет действовать во всех последующих инструкциях
 
+\subsection{Удаляйте бинарные файлы с установленными битами setuid/setgid}
+
+Вероятность того, что вашим приложениям не нужны какие-либо \emph{бинарные файлы с установленными битами} setuid и/или setgid, велика. Бинарные файлы с установленными битами setuid и setgid запускаются с привилегиями владельца, а не текущего пользователя. Обычно это используют для временного повышения привелегий пользователя, требуемого для выполнения конкретной задачи, например для установки или смены пароля.
+
+<<Обезвредить>> эти бинарные файлы можно командой \verb|chmod a-s|, отменяющей установку бита suid \cite[\strbook{330}]{mouat:docker-2017}
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+FROM debian:wheezy
+RUN find / -perm /6000 -type f -exec chmod a-s {} \; || true
+\end{lstlisting}
+
+Часть команды \texttt{|| true} позволяет игнорировать любые ошибки при выполнении.
+
+\subsection{Ограничение использования оперативной памяти}
+
+Ограничение использования оперативной памяти защищает от DoS-атак и от приложений с утечкой памяти, которые постепенно съедают всю доступную память на хосте.
+
+Флаги \verb|-m| и \verb|--memory-swap| в команде \verb|docker run| ограничивают для контейнера объем оперативной памяти и свопа. Аргумент \verb|--memory-swap| устанавливает общий объем доступной памяти, то есть объем оперативной памяти плюс объем свопа.
+
+Если флаг \verb|-m| используется без флага \verb|--memory-swap|, то значение для \verb|--memory-swap| принимается как удвоенное значение аргумента \verb|-m|.
+
+\subsection{Ограничение возможности перезапуска}
+
+Если контейнер постоянно останавливается и перезапускается, то он расходует большое количество системного времени и ресурсов, что может привести к отказу в обслуживании (DoS). Ситуация легко исправляется с помощью установки стратегии перезапуска \verb|on-failure| вместо стратегии \verb|always|
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ docker run -d --restart=on-failure:10 my-flaky-image
+\end{lstlisting}
+
+Docker получает указание перезапускать данные контейнер не более 10 раз.
+
+\subsection{Ограничение файловых систем}
+
+Строгое запрещение записи в файл предотвращает некоторые типы атак и существенно снижает возможности взломщиков. Они не могут записать свой скрипт в файл и запустить его вместо вашего приложения
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ docker run -v $(pwd):/pwd:ro debian touch /pwd/x
+\end{lstlisting}
+
+
+
 \section{Образ на базе Miniconda}
 
 \subsection{Ошибки доступа на чтение-запись файлов внутри контейнера}
@@ -1808,7 +1855,7 @@ $ sudo docker run --rm \
   ${APP_NAME}-${STRATEGY_NAME}
 \end{lstlisting}
 
-\subsection{Пример}
+\subsection{Пример Dockerfile на miniconda}
 
 Детали в \url{https://pythonspeed.com/articles/activate-conda-dockerfile/}
 \begin{lstlisting}[
@@ -1816,8 +1863,13 @@ title = {\sffamily Dockerfile},
 style = bash,
 numbers = none
 ]
-FROM continuumio/miniconda3
+FROM continuumio/miniconda3@sha256:145567896379c33c89737aa1ab1389a71aead35b39f512118a13edcf9fe2a42c
 
+LABEL version 0.1
+LABEL description "Image for local work with Tool Testing Hypothesis Extreme Combinatorics"
+
+ARG USER_ID
+ARG GROUP_ID
 ARG STRATEGY_NAME=fix_bins_ints_in_relax_sol
 ENV STRATEGY_NAME=$STRATEGY_NAME
 ARG PATH_TO_STRATEGIES_DIR=./data/strategies
@@ -1826,27 +1878,20 @@ ENV PATH_TO_STRATEGIES_DIR=$PATH_TO_STRATEGIES_DIR
 COPY ./requirements.txt .
 COPY ./environment.yaml .
 
-# создаем окружение
 RUN conda env create -f environment.yaml
 
-# NB! Имя в 4-ой позиции должно совпадать
-# с именем виртуального окружения в файле environment.yaml
+# NB! Name in 4 pos must match the name of the environment in environment.yaml
 SHELL ["conda", "run", "-n", "tthec", "/bin/bash", "-c"]
 
 COPY .env /.env
 COPY ./src /src
 
-ENTRYPOINT conda run --no-capture-output -n tthec \
-  python ./src/run_app.py \
-    --path-to-strategy ${PATH_TO_STRATEGIES_DIR}/${STRATEGY_NAME}.yaml
-\end{lstlisting}
+RUN find / -perm /6000 -type f -exec chmod a-s {} \; || true
+RUN addgroup --gid $GROUP_ID user && \
+	adduser --disabled-password --gecos '' --uid $USER_ID --gid $GROUP_ID user
+USER user
 
-NB! Чтобы выводились логи контейнера нужно использовать использовать exec-форму \verb|ENTRYPOINT|, т.е.
-\begin{lstlisting}[
-style = bash,
-numbers = none
-]
-ENTRYPOINT ["conda", "run", "--no-capture-output", "-n", "tthec", ...]
+ENTRYPOINT ["/bin/bash", "-c", "exec conda run --no-capture-output -n tthec python ./src/run_app.py --path-to-strategy ${PATH_TO_STRATEGIES_DIR}/${STRATEGY_NAME}.yaml"]
 \end{lstlisting}
 
 Запустить всю цепочку можно так
@@ -1856,24 +1901,34 @@ style = bash,
 numbers = none
 ]
 #!/bin/bash
+##### ARGS #####
 PROBLEM_FILE_NAME=model_MNPZ_march_no_plecho_no_CDO_only_BRN.mps
 STRATEGY_NAME=fix_bins_ints_in_relax_sol_with_perturbation
 APP_NAME=tthec
 PATH_TO_STRATEGIES_DIR=./data/strategies
 
-echo "==> Running 'docker build' ..." && \
+##### LOGIC #####
+echo "==> Running 'docker build' ..."; \
 sudo docker build \
---build-arg STRATEGY_NAME=${STRATEGY_NAME} \
---build-arg PATH_TO_STRATEGIES_DIR=${PATH_TO_STRATEGIES_DIR} \
--t ${APP_NAME}-${STRATEGY_NAME} . && \
-echo "==> Creating strategy ..." && \
+	--build-arg USER_ID=$(id -u) \
+	--build-arg GROUP_ID=$(id -g) \
+	--build-arg STRATEGY_NAME=${STRATEGY_NAME} \
+	--build-arg PATH_TO_STRATEGIES_DIR=${PATH_TO_STRATEGIES_DIR} \
+	-t ${APP_NAME}-${STRATEGY_NAME} \
+	. && \
+echo "==> Creating strategy ..."; \
 PYTHONPATH=./src python ./src/strategy_templates/make_strategy_file.py \
---strategy-name ${STRATEGY_NAME} \
---path-to-relax-set-file ./data/settings/scip_relax.set \
---path-to-milp-set-file ./data/settings/scip_milp.set \
---path-to-test-problem-file ./data/problems/test/${PROBLEM_FILE_NAME} && \
-echo "==> Running 'docker run' ..." && \
-sudo docker run --rm -v $(pwd)/data:/data ${APP_NAME}-${STRATEGY_NAME}
+	--strategy-name ${STRATEGY_NAME} \
+	--path-to-relax-set-file ./data/settings/scip_relax.set \
+	--path-to-milp-set-file ./data/settings/scip_milp.set \
+	--path-to-test-problem-file ./data/problems/${PROBLEM_FILE_NAME} \
+	--path-to-strategies-dir ${PATH_TO_STRATEGIES_DIR} && \
+echo "==> Running 'docker run' ..."; \
+sudo docker run --rm \
+	-v $(pwd)/data:/data \
+	-m 8000m \
+	--memory-swap 8000m \
+	${APP_NAME}-${STRATEGY_NAME}
 \end{lstlisting}
 
 При запуске контейнера можно как обычно создать том \verb|-v $(pwd)/data:/data|, чтобы не пихать данные в образ.

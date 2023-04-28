@@ -1658,6 +1658,243 @@ numbers = none
 brew install dive
 \end{lstlisting}
 
+\section{Обеспечение безопасности контейнеров}
+
+{\color{red}\itshape NB!: Привелегии Docker == привелегии root} \cite[\strbook{311}]{mouat:docker-2017}. Это означает, что любой пользователь, имеющий возможность запускать контейнеры Docker, сразу же получает права root на данном хосте.
+
+Присваивайте метки своим образам! Идентификацию образов и их содержимого можно существенно упростить, используя содержательные метки при создании образов. Она позволяет автору связать произвольную пару ключ-значение с создаваемым образом
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+FROM ...
+LABEL version 0.1
+LABEL description "..."
+\end{lstlisting}
+
+Всегда определяйте тег в инструкциях \verb|FROM|. \verb|FROM redis| -- это неудачный вариант, так как по умолчанию присваивается тег \verb|latest|, который требует изменения через некоторое время из-за значительных корректировок версии. \verb|FROM redis:3.0| лучше, но все-таки требует изменения после небольших обновлений и исправления ошибок.
+
+Если нужна полная уверенность в том, что каждый раз загружается в точности требуемый образ, то единственным вариантом является использование дайджеста, например \cite[\strbook{323}]{mouat:docker-2017}
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+FROM redis@sha256:3479bbcab384fa343b52743b933661335448f8166203688006...
+\end{lstlisting}
+
+Кроме того, использование дайджеста защищает образ от случайного повреждения или искажения.
+
+Указывайте номера версий при установке ПО с помощью менеджеров пакетов
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+apt-get install cowsay=3.03+dfsg1-6
+\end{lstlisting}
+
+То же самое относится к другими системам усткановки пакетов, таким как \verb|pip|, -- если есть возможность, всегда указывайте номер версии \cite[\strbook{324}]{mouat:docker-2017}. При удалении старой версии пакета собранный образ станет неработоспособным, но, по крайней мере, вы получите предупреждающее сообщение об этом.
+
+\subsection{Рекомендации по обеспечению безопасности}
+
+Ремарка: лучше использовать \verb|COPY|, а не \verb|ADD|. Процесс копирования будет более предсказуемым и менее подверженным ошибкам.Когда нужно скачать файл с помощью \verb|curl| и \verb|wget|, то лучше использовать инструкцию \verb|RUN| вместо \verb|ADD|, чтобы загрузить файл, что-то с ним сделать, а затем удалить за один шаг (\verb|&&|), уменьшив количество слоев.
+
+Ремарка: посмотреть \verb|Dockerfile| официальных образов можно на странице проекта Docker. Например для python-slim-buster \url{https://github.com/docker-library/python/blob/cf20bfd43383845a80e52e2c54694cc0b716fae3/3.8/slim-buster/Dockerfile}
+
+Ремарка: для образа \verb|python:3.8-slim-buster| (основывается на образе Debian) и пр. из семейства python не нужно дополнительно устанавливать Debian-версию Python \url{https://habr.com/ru/companies/ruvds/articles/516310/}
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+FROM python:3.8-slim-buster
+
+# НЕ НУЖНО ЭТО ДЕЛАТЬ!!!
+RUN apt-get update && apt-get install python3-dev
+\end{lstlisting}
+
+При выполнении этой команды \verb|RUN| Python будет установлен еще раз, но в \verb|/usr|, а не в \verb|/usr/local|. То есть в одном контейнере будет две разные версии Python.
+
+Ремарка: инструкции \verb|RUN|, \verb|COPY|, \verb|ADD| и др. создают новый слой контейнера, группировка нескольких команд вместе уменьшит количество слоев.
+
+Ремарка: сначала лучше размещать команды, которые с меньшей вероятностью будут изменены и которые легче кешировать:
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+FROM ubuntu
+RUN apt-get install nodejs
+COPY source/* .
+ENTRYPOINT ["/usr/bin/node", "main.js"]
+\end{lstlisting}
+
+Пакет nodejs с меньшей вероятностью изменится, чем исходный код нашего приложения.
+
+\subsubsection{Всегда определяйте пользователя}
+
+Никогда не запускайте приложения в режиме реальной эксплуатации с правами root внутри контейнера. Атакующий, который взламывает такое приложение, получает полный доступ к контейнеру, включая все его данные и программы. И что хуже, атакующий получит права доступа root на хосте.
+
+Чтобы исключить запуск приложений с правами root, в файлах Dockerfile всегда должен создаваться непривилегированный пользователь, после чего необходимо переключиться на него с помощью инструкции \verb|USER| или в скрипте для точки входа \cite[\strbook{326}]{mouat:docker-2017}
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+RUN groupadd -r user_grp && useradd -r -g user_grp user
+USER user
+\end{lstlisting}
+
+Здесь создаются группа \verb|user_grp| и новый пользователь \verb|user|, принадлежащий этой группе. Инструкция \verb|USER| будет действовать во всех последующих инструкциях
+
+\section{Образ на базе Miniconda}
+
+\subsection{Ошибки доступа на чтение-запись файлов внутри контейнера}
+
+\url{https://vsupalov.com/docker-shared-permissions/}
+
+Для того чтобы обойти ошибки доступа на чтение-запись внутри контейнера нужно в образе создать пользователя и группу
+\begin{lstlisting}[
+title = {\sffamily Dockerfile},
+style = bash,
+numbers = none
+]
+FROM continuumio/miniconda3@sha256:145567896379c33c89737aa1ab1389a71aead35b39f512118a13edcf9fe2a42c
+LABEL version 0.1
+LABEL description "Image for local work with Tool Testing Hypothesis Extreme Combinatorics"
+
+ARG USER_ID  # for build-arg from 'docker build' <- $(id -u)
+ARG GROUP_ID  # for build-arg from 'docker build' <- $(id -g)
+ARG STRATEGY_NAME=fix_bins_ints_in_relax_sol
+ENV STRATEGY_NAME=$STRATEGY_NAME
+ARG PATH_TO_STRATEGIES_DIR=./data/strategies
+ENV PATH_TO_STRATEGIES_DIR=$PATH_TO_STRATEGIES_DIR
+
+COPY ./requirements.txt .
+COPY ./environment.yaml .
+
+RUN conda env create -f environment.yaml
+
+# NB! Name in 4 pos must match the name of the environment in environment.yaml
+SHELL ["conda", "run", "-n", "tthec", "/bin/bash", "-c"]
+
+COPY .env /.env
+COPY ./src /src
+
+# NB!!!
+RUN addgroup --gid $GROUP_ID user
+RUN adduser --disabled-password --gecos '' --uid $USER_ID --gid $GROUP_ID user
+USER user
+
+ENTRYPOINT ["/bin/bash", "-c", "exec conda run --no-capture-output -n tthec python ./src/run_app.py --path-to-strategy ${PATH_TO_STRATEGIES_DIR}/${STRATEGY_NAME}.yaml"]
+\end{lstlisting}
+
+А сборка образа будет выглядеть так
+\begin{lstlisting}[
+style = bash,
+numbers = none	
+]
+$ docker build -t ${APP_NAME}-{STRATEGY_NAME} \
+  --build-arg USER_ID=$(id -u) \
+  --build-arg GROUP_ID=$(id -g) \
+  --build-arg STRATEGY_NAME=$(STRATEGY_NAME) \
+  .
+\end{lstlisting}
+
+Запуск контейнера с отображением томов выглядит как обычно
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+...
+$ sudo docker run --rm \
+  -v $(pwd)/data:/data \
+  ${APP_NAME}-${STRATEGY_NAME}
+\end{lstlisting}
+
+\subsection{Пример}
+
+Детали в \url{https://pythonspeed.com/articles/activate-conda-dockerfile/}
+\begin{lstlisting}[
+title = {\sffamily Dockerfile},
+style = bash,
+numbers = none
+]
+FROM continuumio/miniconda3
+
+ARG STRATEGY_NAME=fix_bins_ints_in_relax_sol
+ENV STRATEGY_NAME=$STRATEGY_NAME
+ARG PATH_TO_STRATEGIES_DIR=./data/strategies
+ENV PATH_TO_STRATEGIES_DIR=$PATH_TO_STRATEGIES_DIR
+
+COPY ./requirements.txt .
+COPY ./environment.yaml .
+
+# создаем окружение
+RUN conda env create -f environment.yaml
+
+# NB! Имя в 4-ой позиции должно совпадать
+# с именем виртуального окружения в файле environment.yaml
+SHELL ["conda", "run", "-n", "tthec", "/bin/bash", "-c"]
+
+COPY .env /.env
+COPY ./src /src
+
+ENTRYPOINT conda run --no-capture-output -n tthec \
+  python ./src/run_app.py \
+    --path-to-strategy ${PATH_TO_STRATEGIES_DIR}/${STRATEGY_NAME}.yaml
+\end{lstlisting}
+
+NB! Чтобы выводились логи контейнера нужно использовать использовать exec-форму \verb|ENTRYPOINT|, т.е.
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+ENTRYPOINT ["conda", "run", "--no-capture-output", "-n", "tthec", ...]
+\end{lstlisting}
+
+Запустить всю цепочку можно так
+\begin{lstlisting}[
+title = {\sffamily run\_app\_with\_docker.sh},
+style = bash,
+numbers = none
+]
+#!/bin/bash
+PROBLEM_FILE_NAME=model_MNPZ_march_no_plecho_no_CDO_only_BRN.mps
+STRATEGY_NAME=fix_bins_ints_in_relax_sol_with_perturbation
+APP_NAME=tthec
+PATH_TO_STRATEGIES_DIR=./data/strategies
+
+echo "==> Running 'docker build' ..." && \
+sudo docker build \
+--build-arg STRATEGY_NAME=${STRATEGY_NAME} \
+--build-arg PATH_TO_STRATEGIES_DIR=${PATH_TO_STRATEGIES_DIR} \
+-t ${APP_NAME}-${STRATEGY_NAME} . && \
+echo "==> Creating strategy ..." && \
+PYTHONPATH=./src python ./src/strategy_templates/make_strategy_file.py \
+--strategy-name ${STRATEGY_NAME} \
+--path-to-relax-set-file ./data/settings/scip_relax.set \
+--path-to-milp-set-file ./data/settings/scip_milp.set \
+--path-to-test-problem-file ./data/problems/test/${PROBLEM_FILE_NAME} && \
+echo "==> Running 'docker run' ..." && \
+sudo docker run --rm -v $(pwd)/data:/data ${APP_NAME}-${STRATEGY_NAME}
+\end{lstlisting}
+
+При запуске контейнера можно как обычно создать том \verb|-v $(pwd)/data:/data|, чтобы не пихать данные в образ.
+
+Чтобы иметь возможность подставлять значения переменных окружения в нужные места следует \url{https://stackoverflow.com/questions/37904682/how-do-i-use-docker-environment-variable-in-entrypoint-array}
+\begin{itemize}
+	\item либо использовать <<форму оболочки>> (shell form):
+	
+	\verb|ENTRYPOINT java -cp "app:app/lib/*" --server.port=${LISTEN_PORT:-80}|,
+	\item либо <<точную форму>> (exec form): \verb|ENTRYPOINT ["sh", "-c", "echo "$HOME"].|
+\end{itemize}
+
+Однако есть хитрый способ использовать переменные окружения и при этом остатся в <<exec form>> (чтобы логи не пропадали)
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+ENV MYENV=
+ENTRYPOINT ["/bin/bash", "-c", "exec conda run --no-capture-output -n ${MYENV} python run.py"]
+\end{lstlisting}
+
 
 
 % Источники в "Газовой промышленности" нумеруются по мере упоминания 

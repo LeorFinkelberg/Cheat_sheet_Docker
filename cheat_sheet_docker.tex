@@ -1812,21 +1812,11 @@ ARG STRATEGY_NAME=fix_bins_ints_in_relax_sol
 ENV STRATEGY_NAME=$STRATEGY_NAME
 ARG PATH_TO_STRATEGIES_DIR=./data/strategies
 ENV PATH_TO_STRATEGIES_DIR=$PATH_TO_STRATEGIES_DIR
-
-COPY ./requirements.txt .
-COPY ./environment.yaml .
-
-RUN conda env create -f environment.yaml
-
-# NB! Name in 4 pos must match the name of the environment in environment.yaml
-SHELL ["conda", "run", "-n", "tthec", "/bin/bash", "-c"]
-
-COPY .env /.env
-COPY ./src /src
+...
 
 # NB!!!
-RUN addgroup --gid $GROUP_ID user
-RUN adduser --disabled-password --gecos '' --uid $USER_ID --gid $GROUP_ID user
+RUN addgroup --gid $GROUP_ID user && \
+  adduser --disabled-password --gecos '' --uid $USER_ID --gid $GROUP_ID user
 USER user
 
 ENTRYPOINT ["/bin/bash", "-c", "exec conda run --no-capture-output -n tthec python ./src/run_app.py --path-to-strategy ${PATH_TO_STRATEGIES_DIR}/${STRATEGY_NAME}.yaml"]
@@ -1877,21 +1867,35 @@ ENV PATH_TO_STRATEGIES_DIR=$PATH_TO_STRATEGIES_DIR
 
 COPY ./requirements.txt .
 COPY ./environment.yaml .
+COPY .env /.env
+COPY ./src /src
 
 RUN conda env create -f environment.yaml
 
 # NB! Name in 4 pos must match the name of the environment in environment.yaml
+# activating conda's virtual env
 SHELL ["conda", "run", "-n", "tthec", "/bin/bash", "-c"]
-
-COPY .env /.env
-COPY ./src /src
 
 RUN find / -perm /6000 -type f -exec chmod a-s {} \; || true
 RUN addgroup --gid $GROUP_ID user && \
 	adduser --disabled-password --gecos '' --uid $USER_ID --gid $GROUP_ID user
 USER user
 
+# run python's script under conda's virtual env tthec
 ENTRYPOINT ["/bin/bash", "-c", "exec conda run --no-capture-output -n tthec python ./src/run_app.py --path-to-strategy ${PATH_TO_STRATEGIES_DIR}/${STRATEGY_NAME}.yaml"]
+\end{lstlisting}
+
+То есть здесь мы сначала создаем виртуальное окружение с помощью conda
+
+\verb|RUN conda env create -f ...|, затем активируем с помощью \verb|SHELL ["conda", "run", ...]| и, наконец, запускаем приложение \verb|ENTRYPOINT ["/bin/bash", ...].|. Как указывает в статье \url{https://pythonspeed.com/articles/activate-conda-dockerfile/} вместо \verb|conda activate| можно использовать другой способ запуска команд внутри окружения
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+conda run \
+  --no-capture-outpute \  # чтобы conda могла выводить в stdout и stderr
+  --name myenv \
+  python run.py
 \end{lstlisting}
 
 Запустить всю цепочку можно так
@@ -1938,10 +1942,10 @@ sudo docker run --rm \
 	\item либо использовать <<форму оболочки>> (shell form):
 	
 	\verb|ENTRYPOINT java -cp "app:app/lib/*" --server.port=${LISTEN_PORT:-80}|,
-	\item либо <<точную форму>> (exec form): \verb|ENTRYPOINT ["sh", "-c", "echo "$HOME"].|
+	\item либо <<exec-форму>> (exec form): \verb|ENTRYPOINT ["sh", "-c", "echo $HOME"].|
 \end{itemize}
 
-Однако есть хитрый способ использовать переменные окружения и при этом остатся в <<exec form>> (чтобы логи не пропадали)
+В случае shell-формы в Docker-контейнере пропадут логи. Таким образом, чтобы логи не пропадали и можно было подставлять значения переменных окружения, следует использовать exec-форму
 \begin{lstlisting}[
 style = bash,
 numbers = none

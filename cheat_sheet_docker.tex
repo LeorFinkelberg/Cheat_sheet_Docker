@@ -1537,7 +1537,25 @@ EXPOSE 8080
 
 ВАЖНО: всегда рекомендуется использовать многоэтапную сборку, она в любом случае улучшает читаемость.
 
-Даже после сборки с соблюдением всех правил и советов нужно исследовать образ на возможность дополнительных улучшений. \texttt{Dive} \url{} -- прекрасный инструмент для исследования образа, содержимого слоев и поиска способов уменьшить размер Docker/OCI-образа.
+Даже после сборки с соблюдением всех правил и советов нужно исследовать образ на возможность дополнительных улучшений. \texttt{Dive} \url{https://github.com/wagoodman/dive} -- прекрасный инструмент для исследования образа, содержимого слоев и поиска способов уменьшить размер Docker/OCI-образа.
+
+Установить на Linux Centos 7 можно так
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ export DIVE_VERSION=$(curl -sL "https://api.github.com/repos/wagoodman/dive/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+$ curl -OL https://github.com/wagoodman/dive/releases/download/v${DIVE_VERSION}/dive_${DIVE_VERSION}_linux_amd64.rpm
+$ rpm -i dive_${DIVE_VERSION}_linux_amd64.rpm
+\end{lstlisting}
+
+Запустить dive можно так
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ sudo dive image_name:latest
+\end{lstlisting}
 
 У Dive есть две очень полезные метрики
 \begin{itemize}

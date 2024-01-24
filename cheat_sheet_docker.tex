@@ -2062,9 +2062,11 @@ RUN find / -perm /6000 -type f -exec chmod a-s {} \; || true
 # Create virtual environment with conda
 RUN conda env create -n ${CONDA_ENV_NAME} -f environment.yaml
 
-# NB! Name in 4 pos must match the name of the virtual environment name
-# in environment.yaml (by default: zyopt-env)
-SHELL ["conda", "run", "-n", "zyopt-env", "/bin/bash", "-c"]
+# SHELL ["conda", "run", "-n", "zyopt-env", "/bin/bash", "-c"]
+# Чтобы можно использовать переменные окружения, следует SHELL
+# заменить на CMD
+# https://stackoverflow.com/questions/40454470/how-can-i-use-a-variable-inside-a-dockerfile-cmd
+CMD ["/bin/bash", "-c", "conda", "run", "-n", "${CONDA_ENV_NAME}", "/bin/bash", "-c"]
 
 # Install package
 RUN conda run --no-capture-output -n ${CONDA_ENV_NAME} python setup.py install

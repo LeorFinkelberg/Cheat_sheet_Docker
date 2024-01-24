@@ -2131,6 +2131,35 @@ $ sudo docker run --rm \
 	zyopt-cli
 \end{lstlisting}
 
+Или с помощью обычного текстового файла с переменными окружения
+\begin{lstlisting}[
+title = {\sffamily cli.env},
+style = bash,
+numbers = none
+]
+PATH_TO_PROBLEM=./data/2023_07_YANOS_2690.mps
+SOLVER_NAME_RELAX_PHASE=highs
+SOLVER_NAME_MILP_PHASE=highs
+SELECTED_VARS_RATIO=0.95
+TIME_BUDGET=60
+PATH_TO_RELAX_PARAMS=./data/highs_relax.set
+PATH_TO_MILP_PARAMS=./data/highs_milp.set
+PATH_TO_SOL=./data/sols/tmp.sol
+RANDOM_SEEDS=42
+N_RANDOM_SEEDS=100
+LB=0.0
+UB=0.0
+VAR_UB_SHIFT=0.1
+\end{lstlisting}
+
+А запуск будет выглядеть так
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ sudo docker run --rm --env-file ./cli.env -v $(pwd)/data:/data -v $(pwd)/data/sols:/data/sols zyopt-cli
+\end{lstlisting}
+
 
 
 % Источники в "Газовой промышленности" нумеруются по мере упоминания 

@@ -1954,6 +1954,163 @@ ENV MYENV=
 ENTRYPOINT ["/bin/bash", "-c", "exec conda run --no-capture-output -n ${MYENV} python run.py"]
 \end{lstlisting}
 
+\section{Docker-образ для пакета ZyOpt как утилиты командной строки}
+
+Дерево пакета
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+zyopt/  # проект
+    README.md
+    .pre-commit-config.yaml
+    .gitignore
+    ...
+    zyopt/  # пакет
+        cli.py  # здесь функция main() для запуска ZyOpt в качестве утилиты командной строки
+        heuristics/
+            ...
+        common/
+            ...
+\end{lstlisting}
+
+Для того чтобы с пакетом можно было работать как с утилитой командной строки, в файле \verb*|setup.py| следует добавить точку входа
+\begin{lstlisting}[
+title = {\sffamily setup.py},
+style = ironpython,
+numbers = none
+]
+setuptools.setup(
+name=NAME,
+version=VERSION,
+author=AUTHOR,
+author_email="",
+description=SHORT_DESCRIPTION,
+long_description=README,
+long_description_content_type="text",
+url=URL,
+python_requires=REQUIRES_PYTHON,
+license=LICENSE,
+packages=setuptools.find_packages(exclude=["test*"]),
+entry_points={
+	"console_scripts": [
+		# при вызове утилиты zyopt-cli в терминале будет
+		# вызываться функция main модуля cli.py пакета zyopt
+		"zyopt-cli = zyopt.cli:main",  # <== NB!
+	],
+},
+include_package_data=True,
+install_requires=_get_requirements("requirements.txt"),
+classifiers=[
+"License :: OSI Approved :: BSD License",
+"Programming Language :: Python :: 3.8",
+"Programming Language :: Python :: 3.9",
+"Programming Language :: Python :: 3.10",
+],
+)
+\end{lstlisting}
+
+Теперь после установки пакета (например, с помощью \verb|python setup.py install|) в текущем виртуальном окружении будет доступна утилита командной строки \verb*|zyopt-cli|.
+
+Dockerfile для запуска ZyOpt в режиме командной строки выглядит так
+\begin{lstlisting}[
+title = {\sffamily Dockerfile},
+style = bash,
+numbers = none
+]
+FROM continuumio/miniconda3@sha256:166ff37fba6c25fcad8516aa5481a2a8dfde11370f81b245c1e2e8002e68bcce
+
+ARG USER_ID  # билдовый аргумент; используется при сборке образа
+ARG GROUP_ID  # билдовый аргумент; используется при сборке образа
+
+ENV CONDA_ENV_NAME zyopt-env
+
+LABEL version="1.0"
+LABEL descrioption="Image for local work with heuristic manager ZyOpt CLI"
+
+COPY ./README.md .
+COPY ./environment.yaml .
+COPY ./requirements.txt .
+COPY ./setup.py .
+COPY ./zyopt /zyopt
+
+RUN mkdir /data
+
+WORKDIR /
+
+# Remove binary files setuid/setgid
+RUN find / -perm /6000 -type f -exec chmod a-s {} \; || true
+
+# Create virtual environment with conda
+RUN conda env create -n ${CONDA_ENV_NAME} -f environment.yaml
+
+# NB! Name in 4 pos must match the name of the virtual environment name
+# in environment.yaml (by default: zyopt-env)
+SHELL ["conda", "run", "-n", "zyopt-env", "/bin/bash", "-c"]
+
+# Install package
+RUN conda run --no-capture-output -n ${CONDA_ENV_NAME} python setup.py install
+
+# Rootless
+RUN addgroup --gid ${GROUP_ID} user && \
+    adduser --disabled-password --gecos '' --uid ${USER_ID} --gid ${GROUP_ID} user
+USER user
+
+# Для быстрой проверки
+# ENTRYPOINT conda run --no-capture-output -n ${CONDA_ENV_NAME} zyopt-cli --help
+ENTRYPOINT ["/bin/bash", \  # /bin/bash обязательно на первой строке; переносить нельзя!
+            "-c", \
+            "exec conda run --no-capture-output -n ${CONDA_ENV_NAME} zyopt-cli \
+            --path-to-problem ${PATH_TO_PROBLEM} \
+            --solver-name-relax-phase ${SOLVER_NAME_RELAX_PHASE} \
+            --solver-name-milp-phase ${SOLVER_NAME_MILP_PHASE} \
+            --selected-vars-ratio ${SELECTED_VARS_RATIO} \
+            --time-budget ${TIME_BUDGET} \
+            --path-to-relax-params ${PATH_TO_RELAX_PARAMS} \
+            --path-to-milp-params ${PATH_TO_MILP_PARAMS} \
+            --path-to-sol ${PATH_TO_SOL} \
+            --use-binary \
+            --use-integer \
+            --use-warm-start \
+            --use-recommended-seeds \
+            --random-seeds ${RANDOM_SEEDS} \
+            --n-random-seeds ${N_RANDOM_SEEDS} \
+            --lb ${LB} \
+            --ub ${UB} \
+            --var-ub-shift ${VAR_UB_SHIFT}" \
+]
+\end{lstlisting}
+
+NB: Строка \verb|"exec ..."| обязательно должна включать и \verb*|zyopt-cli|, и параметры утилиты. Нельзя эту строку разбивать на части. Иначе при запуске контейнера утилита запускаться не будет (без сообщений об ошибках).
+
+NB: В shell-формате Docker не выводит логи приложения в stdout/stderr.
+
+Собрать образ можно так
+\begin{lstlisting}[
+style = ironpython,
+numbers = none
+]
+$ sudo docker build \
+    --build-arg USER_ID=$(id -u) \
+    --buidl-arg GROUP_ID=$(id -g) \
+    -t zyopt-cli .
+\end{lstlisting}
+
+Запустить контейнер можно так
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ sudo docker run --rm \
+	-e PATH_TO_PROBLEM=./data/problem.mps \
+	-e SOLVER_NAME_RELAX_PHASE=highs \
+	-e SOLVER_NAME_MILP_PHASE=highs \
+	...
+	-v $(pwd)/data:/data  # здесь должны лежать проблемы, конфигурация и пр.
+	-v $(pwd)/data/sols:/data/sols  # здесь будут результаты
+	zyopt-cli
+\end{lstlisting}
+
 
 
 % Источники в "Газовой промышленности" нумеруются по мере упоминания 

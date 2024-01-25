@@ -1143,6 +1143,18 @@ $ docker rm $(docker ps -aq)
 
 \section{Наиболее полезные конструкции}
 
+\subsection{Регистрация}
+
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ "evdimonianexus" > .docker_password
+$ sudo docker login docker.idp.yc.ziiot.ru \
+    -u alexander.podvoyskiy@idp.zyfra.com \
+    --password-stdin < .docker_password
+\end{lstlisting}
+
 \subsection{Манипуляции с контейнерами}
 
 Запустить контейнер с именем \texttt{leorcont}, создав сеанс интерактивной работы (\texttt{-i}) на подключаемом терминальном устройстве (\texttt{-t}) tty, и вызывать командную оболочку \texttt{bash} из-под ОС~\texttt{Ubuntu Linux}
@@ -2084,20 +2096,20 @@ ENTRYPOINT ["/bin/bash", \  # /bin/bash обязательно на первой
             --path-to-problem ${PATH_TO_PROBLEM} \
             --solver-name-relax-phase ${SOLVER_NAME_RELAX_PHASE} \
             --solver-name-milp-phase ${SOLVER_NAME_MILP_PHASE} \
-            --selected-vars-ratio ${SELECTED_VARS_RATIO} \
-            --time-budget ${TIME_BUDGET} \
+            --selected-vars-ratio ${SELECTED_VARS_RATIO:-0.95} \
+            --time-budget ${TIME_BUDGET:-600} \
             --path-to-relax-params ${PATH_TO_RELAX_PARAMS} \
             --path-to-milp-params ${PATH_TO_MILP_PARAMS} \
             --path-to-sol ${PATH_TO_SOL} \
-            --use-binary \
-            --use-integer \
-            --use-warm-start \
-            --use-recommended-seeds \
-            --random-seeds ${RANDOM_SEEDS} \
-            --n-random-seeds ${N_RANDOM_SEEDS} \
-            --lb ${LB} \
-            --ub ${UB} \
-            --var-ub-shift ${VAR_UB_SHIFT}" \
+            --use-binary ${USE_BINARY:-true} \
+            --use-integer ${USE_INTEGER:-true} \
+            --use-warm-start ${USE_WARM_START:-true} \
+            --use-recommended-seeds ${USE_RECOMMENDED_SEEDS:-true} \
+            --random-seeds ${RANDOM_SEEDS:-true} \
+            --n-random-seeds ${N_RANDOM_SEEDS:-true} \
+            --lb ${LB:-0.0} \
+            --ub ${UB:-0.0} \
+            --var-ub-shift ${VAR_UB_SHIFT:-0.1}" \
 ]
 \end{lstlisting}
 
@@ -2147,6 +2159,10 @@ PATH_TO_MILP_PARAMS=./data/highs_milp.set
 PATH_TO_SOL=./data/sols/tmp.sol
 RANDOM_SEEDS=42
 N_RANDOM_SEEDS=100
+USE_BINARY=true
+USE_INTEGER=true
+USE_WARM_START=true
+USE_RECOMMENDED_SEEDS=true
 LB=0.0
 UB=0.0
 VAR_UB_SHIFT=0.1

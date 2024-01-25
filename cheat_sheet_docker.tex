@@ -1155,6 +1155,17 @@ $ sudo docker login docker.idp.yc.ziiot.ru \
     --password-stdin < .docker_password
 \end{lstlisting}
 
+Или так
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ export DOCKER_PASSWORD=dOcker_p@$$word
+$ echo ${DOCKER_PASSWORD} | sudo docker login docker.idp.yc.ziiot.ru \
+    -u alexander.podvoyskiy@idp.zyfra.com \
+    --password-stdin
+\end{lstlisting}
+
 \subsection{Манипуляции с контейнерами}
 
 Запустить контейнер с именем \texttt{leorcont}, создав сеанс интерактивной работы (\texttt{-i}) на подключаемом терминальном устройстве (\texttt{-t}) tty, и вызывать командную оболочку \texttt{bash} из-под ОС~\texttt{Ubuntu Linux}

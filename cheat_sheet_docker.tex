@@ -1276,6 +1276,32 @@ numbers = none
 docker rmi $(docker images | sed '1d' | awk -F ' ' '{ print $3 }')
 \end{lstlisting}
 
+\subsection{Обращение к этапам мультистадийной сборки}
+
+Если Dockerfile-содержит несколько стадий сборки, то можно воспользоваться параметром \verb*|--target| для указания конкретной стадии
+\begin{lstlisting}[
+title = {\sffamily Dockerfile},
+style = bash,
+numbers = none
+]
+FROM debian AS build-env
+...
+
+FROM alpine AS production-env
+...
+\end{lstlisting}
+
+Сборка образа
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ docker build \
+    -t mybuildimage \
+    --target build-env \  # указываем стадию сборки
+    .  # контекст сборки
+\end{lstlisting}
+
 \section{Docker для ML}
 
 Данных не должно быть в docker-образе. Данные должны подгружаться при запуске контейнера. Docker-образ можно запускать с помощью Airflow. Оркестратор Airflow скачает docker-образ и запустит его. Можно настроить запуск по расписанию с помощью Kubernetes.

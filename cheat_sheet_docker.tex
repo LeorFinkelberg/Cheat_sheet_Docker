@@ -471,7 +471,9 @@ numbers = none
 docker run test/cowsay-dockerfile Moo
 \end{lstlisting}
 
-\subsection{Пример файла docker-compose.yml}
+\subsection{Примеры файла docker-compose.yml}
+
+\subsubsection{Автоматизация настройки запуска контейнера}
 
 Рассмотрим в качестве примера файл \texttt{docker-compose.yml} для автоматизации процесса настройки и запуска контейнера
 \begin{lstlisting}[
@@ -504,6 +506,71 @@ numbers = none
 ]
 $ docker-compose up -d
 \end{lstlisting}
+
+\subsubsection{MongoDB, Redis, фронтэнд, бекэнд и воркер}
+
+\begin{lstlisting}[
+title = {\sffamily docker-compose.yaml},
+style = bash,
+numbers = none
+]
+version: '3'
+services:
+	mongo:
+		image: "mongo:latest"
+	redis:
+		image: "redis:alpine"
+	backend:
+		build:
+			context: .
+			dockerfile: ./docker/backend/Dockerfile
+		environment:
+			- APP_ENV=dev
+		depends_on:
+			- mongo
+			- redis
+		ports:
+			- "40001:40001"
+		volumes:
+			- .:/code
+	frontend:
+		build:
+			context: .
+			dockerfile: ./docker/frontend/Dockerfile
+		environment:
+			- APP_ENV=dev
+			- APP_BACKEND_URL=backend:40001
+			- APP_FRONTEND_PORT=40002
+		depends_on:
+			- backend
+		ports:
+			- "40002:40002"
+		volumes:
+			- ./frontend:/app/src
+		worker:
+			build:
+				context: .
+				dockerfile: ./docker/worker/Dockerfile
+			environment:
+				- APP_ENV=dev
+			depends_on:
+				- mongo
+				- redis
+			volumes:
+				- .:/code
+\end{lstlisting}
+
+Вкратце, что тут происходит:
+\begin{itemize}
+	\item Создается контейнер MongoDB и контейнер Redis.
+	
+	\item Создается контейнер нашего бекэнда. В него передается переменная окружения \verb*|APP_ENV=dev|, и открывается наружу его порт 40001 (через него в API будет ходить наш браузерный клиент).
+	
+	\item Создается контейнер фронтэнда. В него тоже прокидываются разнообразные переменные окружения, которые нам потом пригодятся, и открывается порт 40002. Это основной порт нашего веб-приложения: в браузере мы будем заходить на \verb*|http://localhost:40002|.
+	
+	\item Создается контейнер воркера. Ему внешние порты не нужны, а нужен только доступ в MongoDB и Redis.
+\end{itemize}
+
 
 \subsection{Порядок работы с docker-compose}
 

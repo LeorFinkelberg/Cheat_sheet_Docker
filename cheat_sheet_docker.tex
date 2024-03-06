@@ -990,7 +990,132 @@ IP-адрес состоит из двух логических частей -- 
 
 Интерфейс loopback имеет несколько путей применения. Он может быть использован сетевым клиентским программным обеспечением, чтобы общаться с серверным приложением, расположенным на том компьютере. То есть если на компьютере, на котором запущен веб-сервер, указать в веб-браузере URL \texttt{http://127.0.0.1/} или \texttt{http:/localhost/}, то он попадает на веб-сайт этого компьютера.
 
+\section{Примеры локального развертывания PostgreSQL, ClickHouse и  Superset}
 
+Шаги:
+\begin{itemize}
+	\item создаем тома
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ docker volume create postgres_vol_1
+$ docker volume create postgres_vol_2
+$ docker volume create clickhouse_vol
+\end{lstlisting}
+    \item создаем сеть
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ docker network create app_net
+\end{lstlisting}
+    \item поднимаем PostgreSQL
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ docker run --rm -d \
+    --name postgres_1 \
+    -e POSTGRES_PASSWORD=postgres_admin \
+    -e POSTGRES_USER=postgres_admin \
+    -e POSTGRES_DB=test_app \
+    -v postgres_vol_1:/var/lib/postgresql/data \
+    --net=app_net \
+    postgres:14
+\end{lstlisting}
+    \item поднимаем Superset
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ docker run -d  --rm --net=app_net -p 80:8088 --name superset apache/superset
+\end{lstlisting}
+    \item настраиваем Superset (информация есть на странице официального образа), создаем пользователя и пр.
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+# первый superset это имя контейнера, а второй -- это утилита командной строки для работы с Superset
+$ docker exec -it superset superset fab create-admin \
+    --username admin \
+    --firstname Superset \
+    --lastname Admin \
+    --email admin@superset.com \
+    --password admin
+\end{lstlisting}
+    \item накатываем миграции
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ docker exec -it superset superset db upgrade
+\end{lstlisting}
+    \item инициализируем Superset
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ docker exec -it superset superset init
+\end{lstlisting}
+    \item поднимаем ClickHouse
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ docker run --rm -d \
+    --name clickhouse \
+    --net=app_net \
+    -v clickhouse_vol:/var/lib/clickhouse \
+    yandex/clickhouse-server
+\end{lstlisting}
+    \item чтобы ClickHouse мог работать из-под Superset, нужно установить Python-пакет \verb*|clickhouse-sqlalchemy|
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ docker exec superset pip install clickhouse-sqlalchemy
+\end{lstlisting}
+    \item перезапускаем контейнер с Superset
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ docker restart superset
+\end{lstlisting}
+    \item при запуске ClickHouse локально по Docker-сети (в данном случае \verb*|app_net|) , нужно в Superset указать имя контейнера (в данном случае \verb*|clickhouse|)
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+clickhouse+native://clickhouse/default
+\end{lstlisting}
+\end{itemize}
+
+NB: чтобы получить доступ, например, к PostgreSQL программно (то есть, скажем, из-под Python на \verb*|localhost:5432|), можно создать еще один контейнер PostgreSQL и пробросить порт
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ docker run --rm -d \
+    --name postgres_2 \
+    -e POSTGRES_PASSWORD=postgres_some_password \
+    -e POSTGRES_USER=postgres_some_user \
+    ...
+    -v postgres_vol_2:/var/lib/postgresql/data \
+    --net=app_net \
+    -p 5432:5432 \  # NB
+    postgres:14
+\end{lstlisting}
+
+После окончания работ с контейнерами нужно удалить неиспользуемые тома
+\begin{lstlisting}[
+style = bash,
+numbers = none
+]
+$ docker volumne prune
+$ docker volume ls
+\end{lstlisting}
 
 \section{Пример создания простого web-приложения}
 

@@ -1108,6 +1108,19 @@ $ docker run --rm -d \
     postgres:14
 \end{lstlisting}
 
+NB: чтобы подключить Superset к локальной PostgreSQL (к базе данных, существующей на локальной машине, не в контейнере) нужно в форме Superset <<Edit database>> в поле <<HOST>> вкладки <<BASIC>> указать {\color{blue}\verb*|host.docker.internal|} (!), а НЕ \verb*|localhost| или \verb*|127.0.0.1|. Порт стандартный 5432. То есть получается
+\begin{itemize}
+	\item HOST: \verb*|host.docker.internal|,
+	
+	\item PORT: \verb*|5432|,
+	
+	\item DATABASE NAME: \verb*|leor.finkelberg|,
+	
+	\item USERNAME: \verb*|postgres|,
+	
+	\item DISPLAY NAME: \verb*|PostgreSQL|.
+\end{itemize}
+
 После окончания работ с контейнерами нужно удалить неиспользуемые тома
 \begin{lstlisting}[
 style = bash,

@@ -1029,7 +1029,7 @@ $ docker run --rm -d \
 style = bash,
 numbers = none
 ]
-$ docker run -d  --rm --net=app_net -p 80:8088 --name superset apache/superset
+$ docker run -d  --rm --net=app_net -p 8080:8088 -e "SUPERSET_SECRETE_KEY=TEN...Wq" --name superset apache/superset
 \end{lstlisting}
     \item настраиваем Superset (информация есть на странице официального образа), создаем пользователя и пр.
 \begin{lstlisting}[

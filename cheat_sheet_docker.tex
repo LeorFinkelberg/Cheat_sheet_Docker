@@ -1237,6 +1237,8 @@ FROM python:3.5
 RUN groupadd -r uwsgi && useradd -r -g uwsgi uwsgi
 RUN pip install Flask==1.1.1 gunicorn==20.0.0 requests==2.22.0 redis==3.5.0
 WORKDIR /app
+# СОДЕРЖИМОЕ директории ./app на хосте будет скопировано
+# в директорию app контейнера
 COPY app /app
 COPY cmd.sh /
 
@@ -1245,6 +1247,10 @@ USER uwsgi
 
 CMD ["/cmd.sh"]
 \end{lstlisting}
+
+Замечание: конструкция \verb|COPY dir /app| означает, что \emph{содержимое} (контент)
+директории \verb|dir| хоста будет скопировано в директорию \verb|app| контейнера,
+а не сама директория \verb|dir|!
 
 Запустить приложение в режиме тестирования можно так
 \begin{lstlisting}[
